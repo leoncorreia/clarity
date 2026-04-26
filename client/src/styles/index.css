@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --overlay: rgba(8, 12, 20, 0.58);
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: #070b12;
+  color: #e5ecff;
+}
+
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.glass {
+  backdrop-filter: blur(12px);
+  background: var(--overlay);
+  border: 1px solid rgba(149, 174, 228, 0.24);
+}
+
+.voice-orb {
+  width: 80px;
+  height: 80px;
+  border-radius: 9999px;
+  border: 1px solid rgba(173, 190, 243, 0.45);
+  transition: 180ms ease;
+}
+
+.pulse-listening { box-shadow: 0 0 0 0 rgba(69, 153, 255, 0.75); animation: pulseBlue 1.2s infinite; }
+.pulse-speaking { box-shadow: 0 0 0 0 rgba(248, 191, 93, 0.75); animation: pulseAmber 1.1s infinite; }
+
+@keyframes pulseBlue {
+  70% { box-shadow: 0 0 0 14px rgba(69, 153, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(69, 153, 255, 0); }
+}
+
+@keyframes pulseAmber {
+  70% { box-shadow: 0 0 0 14px rgba(248, 191, 93, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 191, 93, 0); }
+}

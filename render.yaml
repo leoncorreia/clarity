@@ -1,42 +1,59 @@
 services:
   - type: web
-    name: clarity-backend
+    name: crisis-coach-server
     runtime: node
-    plan: free
     rootDir: .
     buildCommand: npm ci
-    startCommand: npm run server
+    startCommand: node server/index.js
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 20
-      - key: BODHI_API_KEY
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: EMERGENCY_CONTACT_NUMBER
+        sync: false
+      - key: ONCALL_THERAPIST_NUMBER
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
         sync: false
 
   - type: web
-    name: clarity-frontend
+    name: crisis-coach-client
     runtime: static
     rootDir: .
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
+    buildCommand: npm ci && npm --prefix client ci && npm --prefix client run build
+    staticPublishPath: client/dist
     envVars:
       - key: NODE_VERSION
         value: 20
-      - key: VITE_RENDER_DEPLOYMENT
-        value: "true"
-      - key: VITE_USE_REAL_BODHI
-        value: "true"
-      - key: VITE_BODHI_AGENT_ID
-        sync: false
       - key: VITE_BODHI_API_KEY
         sync: false
-      - key: VITE_BODHI_BASE_URL
-        value: https://api.bodhiagent.live
-      - key: VITE_API_BASE_URL
-        sync: false
-      - key: VITE_SPATIALREAL_APP_ID
+      - key: VITE_BODHI_WS_URL
         sync: false
       - key: VITE_SPATIALREAL_API_KEY
         sync: false
       - key: VITE_SPATIALREAL_AVATAR_ID
-        value: 7662336d-8eda-4dd0-ae39-5119777679ba
+        sync: false
+      - key: VITE_HUME_API_KEY
+        sync: false
+      - key: VITE_API_BASE_URL
+        sync: false
+
+  - type: worker
+    name: crisis-coach-affect-worker
+    runtime: node
+    rootDir: .
+    buildCommand: npm ci
+    startCommand: node server/worker.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: HUME_API_KEY
+        sync: false
