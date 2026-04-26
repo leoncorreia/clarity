@@ -6,7 +6,27 @@ export interface SpatialRenderState {
   bodyCue: string;
 }
 
+export interface SpatialAvatarConfig {
+  avatarId: string;
+  appId?: string;
+  liveEnabled: boolean;
+}
+
+const spatialAvatarId =
+  (import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined) ??
+  "7662336d-8eda-4dd0-ae39-5119777679ba";
+const spatialAppId = import.meta.env.VITE_SPATIALREAL_APP_ID as string | undefined;
+const spatialApiKey = import.meta.env.VITE_SPATIALREAL_API_KEY as string | undefined;
+
 export const spatialRealAdapter = {
+  getAvatarConfig(): SpatialAvatarConfig {
+    return {
+      avatarId: spatialAvatarId,
+      appId: spatialAppId,
+      liveEnabled: Boolean(spatialAppId && spatialApiKey && spatialAvatarId)
+    };
+  },
+
   getRenderState(mode: ClarityMode, urgencyLevel: number, gazeTarget: "left" | "center" | "right"): SpatialRenderState {
     const ringIntensity = Math.min(100, 30 + urgencyLevel * 18 + (mode === "speaking" ? 10 : 0));
     const bodyCue =

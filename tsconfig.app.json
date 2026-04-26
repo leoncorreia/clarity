@@ -18,5 +18,14 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/lovable/components/ui",
+    "src/lovable/routes",
+    "src/lovable/router.tsx",
+    "src/lovable/routeTree.gen.ts",
+    "src/lovable/hooks",
+    "src/lovable/components/clarity/ScenarioSelector.tsx",
+    "src/lovable/components/clarity/SponsorStack.tsx"
+  ]
 }
