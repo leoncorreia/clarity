@@ -21,6 +21,7 @@ function App() {
   const [error, setError] = useState("");
   const [typedInput, setTypedInput] = useState("");
   const [inputMode, setInputMode] = useState<"mic" | "text">("mic");
+  const [pushToTalkActive, setPushToTalkActive] = useState(false);
   const mountRef = useRef<HTMLDivElement | null>(null);
 
   const { hrBpm, connect: connectBiometrics } = useBiometrics();
@@ -139,8 +140,14 @@ function App() {
   }, [bodhi, dominantEmotion, hrBpm, sessionStartedAt]);
 
   useEffect(() => {
-    bodhi.setMicEnabled(inputMode === "mic" && !bodhi.isSpeaking);
-  }, [bodhi, inputMode]);
+    bodhi.setMicEnabled(inputMode === "mic" && pushToTalkActive && !bodhi.isSpeaking);
+  }, [bodhi, inputMode, pushToTalkActive]);
+
+  useEffect(() => {
+    if (inputMode === "text" && pushToTalkActive) {
+      setPushToTalkActive(false);
+    }
+  }, [inputMode, pushToTalkActive]);
 
   const beginSession = async () => {
     try {
@@ -233,6 +240,23 @@ function App() {
               Send
             </button>
           </div>
+          {inputMode === "mic" ? (
+            <div className="mt-3">
+              <button
+                type="button"
+                onMouseDown={() => setPushToTalkActive(true)}
+                onMouseUp={() => setPushToTalkActive(false)}
+                onMouseLeave={() => setPushToTalkActive(false)}
+                onTouchStart={() => setPushToTalkActive(true)}
+                onTouchEnd={() => setPushToTalkActive(false)}
+                className={`rounded px-3 py-2 text-xs ${
+                  pushToTalkActive ? "bg-emerald-600" : "bg-slate-700"
+                }`}
+              >
+                {pushToTalkActive ? "Listening... release to send" : "Hold to talk"}
+              </button>
+            </div>
+          ) : null}
           {(error || bodhi.error) ? <div className="mt-2 text-red-300">{error || bodhi.error}</div> : null}
         </div>
 
