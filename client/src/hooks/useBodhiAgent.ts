@@ -17,6 +17,7 @@ interface UseBodhiAgentArgs {
   enabled: boolean;
   onFinalTranscript: (text: string) => void;
   onTtsPcmChunk?: (chunk: ArrayBuffer) => void;
+  onTtsUtteranceEnd?: () => void;
 }
 
 interface BodhiSessionTicket {
@@ -75,7 +76,7 @@ const resampleFloat32 = (input: Float32Array, sourceRate: number, targetRate: nu
   return output;
 };
 
-export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: UseBodhiAgentArgs): BodhiAgentState {
+export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk, onTtsUtteranceEnd }: UseBodhiAgentArgs): BodhiAgentState {
   const [transcript, setTranscript] = useState("");
   const [agentText, setAgentText] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -95,6 +96,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
   const micEnabledRef = useRef(true);
   const onFinalTranscriptRef = useRef(onFinalTranscript);
   const onTtsPcmChunkRef = useRef(onTtsPcmChunk);
+  const onTtsUtteranceEndRef = useRef(onTtsUtteranceEnd);
   const nextPlaybackTimeRef = useRef(0);
   const activeSocketRef = useRef<WebSocket | null>(null);
   const streamEpochRef = useRef(0);
@@ -117,6 +119,10 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
   useEffect(() => {
     onTtsPcmChunkRef.current = onTtsPcmChunk;
   }, [onTtsPcmChunk]);
+
+  useEffect(() => {
+    onTtsUtteranceEndRef.current = onTtsUtteranceEnd;
+  }, [onTtsUtteranceEnd]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -241,12 +247,17 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         setTranscript(text);
         if (final) {
           onFinalTranscriptRef.current(text);
+          onTtsUtteranceEndRef.current?.();
         }
         return;
       }
 
       if ((type.includes("agent") || type.includes("response")) && (message.text || message.payload?.text)) {
         setAgentText(message.text || message.payload?.text || "");
+      }
+
+      if (type === "agent_response_complete" || type === "response_complete") {
+        onTtsUtteranceEndRef.current?.();
       }
     };
 

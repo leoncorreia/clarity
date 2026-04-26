@@ -24,8 +24,7 @@ export function useSpatialReal() {
     () => ({
       appId: import.meta.env.VITE_SPATIALREAL_APP_ID as string | undefined,
       avatarId: import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined,
-      sessionToken: import.meta.env.VITE_SPATIALREAL_SESSION_TOKEN as string | undefined,
-      audioSampleRate: Number(import.meta.env.VITE_BODHI_TTS_SAMPLE_RATE || "16000")
+      sessionToken: import.meta.env.VITE_SPATIALREAL_SESSION_TOKEN as string | undefined
     }),
     []
   );
@@ -45,10 +44,10 @@ export function useSpatialReal() {
         await AvatarSDK.initialize(config.appId, {
           environment: Environment.intl,
           drivingServiceMode: DrivingServiceMode.sdk,
-          logLevel: LogLevel.warning,
+          logLevel: LogLevel.all,
           audioFormat: {
             channelCount: 1,
-            sampleRate: config.audioSampleRate
+            sampleRate: 24000
           }
         });
       }
@@ -65,6 +64,9 @@ export function useSpatialReal() {
       view.controller.onConnectionState = (state: string) => {
         setAvatarReady(state === "connected");
       };
+      view.controller.onConversationState = (state: string) => {
+        console.log("SR conversation state:", state);
+      };
 
       await view.controller.initializeAudioContext();
       await view.controller.start();
@@ -79,7 +81,7 @@ export function useSpatialReal() {
     } finally {
       connectingRef.current = false;
     }
-  }, [avatarReady, config.appId, config.audioSampleRate, config.avatarId, config.sessionToken]);
+  }, [avatarReady, config.appId, config.avatarId, config.sessionToken]);
 
   const setExpression = useCallback((payload: ExpressionPayload) => {
     const view = avatarViewRef.current;
@@ -122,8 +124,14 @@ export function useSpatialReal() {
   const sendAudio = useCallback((buffer: ArrayBuffer) => {
     const view = avatarViewRef.current;
     if (!view || buffer.byteLength === 0) return;
-    (view.controller as unknown as { send?: (audioData: ArrayBuffer, end: boolean) => string }).send?.(buffer, true);
+    (view.controller as unknown as { send?: (audioData: ArrayBuffer, end: boolean) => string }).send?.(buffer, false);
   }, []);
 
-  return { connect, setExpression, syncLips, driveAudio, sendAudio, disconnect, avatarReady, error };
+  const endAudio = useCallback(() => {
+    const view = avatarViewRef.current;
+    if (!view) return;
+    (view.controller as unknown as { send?: (audioData: ArrayBuffer, end: boolean) => string }).send?.(new ArrayBuffer(0), true);
+  }, []);
+
+  return { connect, setExpression, syncLips, driveAudio, sendAudio, endAudio, disconnect, avatarReady, error };
 }
