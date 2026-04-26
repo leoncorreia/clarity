@@ -27,6 +27,8 @@ services:
         sync: false
       - key: VITE_BODHI_WS_URL
         sync: false
+      - key: VITE_BODHI_AGENT_ID
+        sync: false
       - key: VITE_SPATIALREAL_APP_ID
         sync: false
       - key: VITE_SPATIALREAL_AVATAR_ID

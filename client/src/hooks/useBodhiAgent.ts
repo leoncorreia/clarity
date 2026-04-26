@@ -15,7 +15,43 @@ interface UseBodhiAgentArgs {
   onFinalTranscript: (text: string) => void;
 }
 
+interface BodhiSessionTicket {
+  sessionIntentId: string;
+  token: string;
+}
+
+interface BodhiSocketMessage {
+  type?: string;
+  text?: string;
+  final?: boolean;
+  transcript?: string;
+  payload?: { text?: string; final?: boolean };
+  sampleRate?: number;
+  sessionId?: string;
+}
+
 const systemPrompt = `You are a compassionate mental health first responder. You are trained in CBT grounding techniques (5-4-3-2-1 sensory), box breathing guidance, and de-escalation. Never dismiss feelings. Never suggest the user is overreacting. If the user expresses suicidal ideation, always validate first, then gently ask if they are safe. Keep responses under 3 sentences unless the user asks for more. You can be interrupted at any time — treat interruption as the user needing to speak, not as rudeness. Your goal is to keep the person present, grounded, and connected until professional help is available.`;
+
+const toWsOrigin = (origin: string): string => {
+  const trimmed = origin.replace(/\/$/, "");
+  if (trimmed.startsWith("https://")) return `wss://${trimmed.slice(8)}`;
+  if (trimmed.startsWith("http://")) return `ws://${trimmed.slice(7)}`;
+  return trimmed;
+};
+
+const clampFloatToInt16 = (value: number): number => {
+  const clamped = Math.max(-1, Math.min(1, value));
+  return clamped < 0 ? clamped * 32768 : clamped * 32767;
+};
+
+const pcm16ToFloat32 = (buffer: ArrayBuffer): Float32Array => {
+  const pcm = new Int16Array(buffer);
+  const float = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i += 1) {
+    float[i] = pcm[i] / 32768;
+  }
+  return float;
+};
 
 export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs): BodhiAgentState {
   const [transcript, setTranscript] = useState("");
@@ -28,117 +64,244 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   const mediaRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playbackNodesRef = useRef<AudioBufferSourceNode[]>([]);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const serverSampleRateRef = useRef<number>(24000);
+  const sessionIdRef = useRef<string>("");
+  const readyRef = useRef(false);
 
-  const wsUrl = useMemo(() => import.meta.env.VITE_BODHI_WS_URL as string | undefined, []);
+  const origin = useMemo(() => (import.meta.env.VITE_BODHI_WS_URL as string | undefined)?.replace(/\/$/, ""), []);
   const apiKey = useMemo(() => import.meta.env.VITE_BODHI_API_KEY as string | undefined, []);
+  const agentId = useMemo(() => import.meta.env.VITE_BODHI_AGENT_ID as string | undefined, []);
 
   useEffect(() => {
     if (!enabled) return;
-    if (!wsUrl || !apiKey) {
-      setError("Missing Bodhi WebSocket credentials.");
+    if (!origin || !apiKey) {
+      setError("Missing Bodhi origin or API key.");
       return;
     }
 
     let cancelled = false;
 
+    const teardownAudio = () => {
+      processorRef.current?.disconnect();
+      sourceRef.current?.disconnect();
+      processorRef.current = null;
+      sourceRef.current = null;
+      mediaRef.current?.getTracks().forEach((track) => track.stop());
+      mediaRef.current = null;
+    };
+
+    const playPcmChunk = (buffer: ArrayBuffer) => {
+      if (!audioCtxRef.current) return;
+      const sampleRate = serverSampleRateRef.current || 24000;
+      const float = pcm16ToFloat32(buffer);
+      const audioBuffer = audioCtxRef.current.createBuffer(1, float.length, sampleRate);
+      const channelData = new Float32Array(float.length);
+      channelData.set(float);
+      audioBuffer.copyToChannel(channelData, 0);
+
+      const node = audioCtxRef.current.createBufferSource();
+      node.buffer = audioBuffer;
+      node.connect(audioCtxRef.current.destination);
+      node.onended = () => {
+        playbackNodesRef.current = playbackNodesRef.current.filter((entry) => entry !== node);
+        if (playbackNodesRef.current.length === 0) setIsSpeaking(false);
+      };
+      playbackNodesRef.current.push(node);
+      setIsSpeaking(true);
+      node.start();
+    };
+
+    const startMicStreaming = async () => {
+      if (!audioCtxRef.current || !mediaRef.current || !wsRef.current || processorRef.current) return;
+
+      const source = audioCtxRef.current.createMediaStreamSource(mediaRef.current);
+      const processor = audioCtxRef.current.createScriptProcessor(2048, 1, 1);
+      source.connect(processor);
+      processor.connect(audioCtxRef.current.destination);
+
+      processor.onaudioprocess = (event) => {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !readyRef.current) return;
+
+        const channel = event.inputBuffer.getChannelData(0);
+        const pcm = new Int16Array(channel.length);
+        for (let i = 0; i < channel.length; i += 1) {
+          pcm[i] = clampFloatToInt16(channel[i]);
+        }
+        ws.send(pcm.buffer);
+      };
+
+      sourceRef.current = source;
+      processorRef.current = processor;
+      setIsListening(true);
+    };
+
+    const handleJsonMessage = async (message: BodhiSocketMessage) => {
+      const type = message.type?.toLowerCase() ?? "";
+
+      if (type === "session.config" || type === "session_config") {
+        if (typeof message.sampleRate === "number" && Number.isFinite(message.sampleRate)) {
+          serverSampleRateRef.current = message.sampleRate;
+        }
+        return;
+      }
+
+      if (type === "session.ready" || type === "session_ready") {
+        readyRef.current = true;
+        if (message.sessionId) {
+          sessionIdRef.current = message.sessionId;
+        }
+        await startMicStreaming();
+        return;
+      }
+
+      if (type === "session.error" || type === "error") {
+        setError(message.text || "Bodhi session error.");
+        return;
+      }
+
+      if ((type.includes("transcript") || type.includes("stt")) && (message.text || message.transcript || message.payload?.text)) {
+        const text = message.text || message.transcript || message.payload?.text || "";
+        const final = Boolean(message.final || message.payload?.final);
+        setTranscript(text);
+        if (final) {
+          onFinalTranscript(text);
+        }
+        return;
+      }
+
+      if ((type.includes("agent") || type.includes("response")) && (message.text || message.payload?.text)) {
+        setAgentText(message.text || message.payload?.text || "");
+      }
+    };
+
+    const createSessionTicket = async (): Promise<BodhiSessionTicket> => {
+      const response = await fetch(`${origin}/api/mobile/sessions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          agentProfile: agentId,
+          systemPrompt
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create Bodhi session (${response.status}).`);
+      }
+
+      const payload = (await response.json()) as Partial<BodhiSessionTicket>;
+      if (!payload.sessionIntentId || !payload.token) {
+        throw new Error("Invalid Bodhi session ticket response.");
+      }
+
+      return {
+        sessionIntentId: payload.sessionIntentId,
+        token: payload.token
+      };
+    };
+
+    const closeRemoteSession = async () => {
+      if (!sessionIdRef.current) return;
+      try {
+        await fetch(`${origin}/api/mobile/sessions/${encodeURIComponent(sessionIdRef.current)}/close`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
+          }
+        });
+      } catch {
+        // Non-fatal best effort close.
+      }
+    };
+
     const start = async () => {
-      const media = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      if (cancelled) return;
+      try {
+        mediaRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        if (cancelled) return;
 
-      mediaRef.current = media;
-      audioCtxRef.current = new AudioContext({ sampleRate: 24000 });
+        audioCtxRef.current = new AudioContext({ sampleRate: 24000 });
 
-      const ws = new WebSocket(`${wsUrl}?api_key=${encodeURIComponent(apiKey)}`);
-      wsRef.current = ws;
+        const ticket = await createSessionTicket();
+        if (cancelled) return;
 
-      ws.onopen = () => {
-        setIsListening(true);
-        ws.send(JSON.stringify({ type: "session_init", prompt: systemPrompt }));
+        const socketUrl = `${toWsOrigin(origin)}/ws/mobile?sessionIntentId=${encodeURIComponent(ticket.sessionIntentId)}&token=${encodeURIComponent(ticket.token)}`;
+        const ws = new WebSocket(socketUrl);
+        ws.binaryType = "arraybuffer";
+        wsRef.current = ws;
 
-        const source = audioCtxRef.current!.createMediaStreamSource(media);
-        const processor = audioCtxRef.current!.createScriptProcessor(2048, 1, 1);
-        source.connect(processor);
-        processor.connect(audioCtxRef.current!.destination);
-
-        processor.onaudioprocess = (event) => {
-          if (ws.readyState !== WebSocket.OPEN) return;
-          const channel = event.inputBuffer.getChannelData(0);
-          const pcm = new Int16Array(channel.length);
-          for (let i = 0; i < channel.length; i += 1) {
-            pcm[i] = Math.max(-1, Math.min(1, channel[i])) * 32767;
-          }
-          ws.send(JSON.stringify({ type: "audio_chunk", pcm: btoa(String.fromCharCode(...new Uint8Array(pcm.buffer))) }));
-        };
-      };
-
-      ws.onmessage = async (event) => {
-        const payload = JSON.parse(event.data) as {
-          type: string;
-          text?: string;
-          final?: boolean;
-          pcm?: string;
+        ws.onopen = () => {
+          setError("");
         };
 
-        if (payload.type === "stt_chunk" && payload.text) {
-          setTranscript(payload.text);
-          if (payload.final) {
-            onFinalTranscript(payload.text);
+        ws.onmessage = async (event) => {
+          if (typeof event.data === "string") {
+            try {
+              const parsed = JSON.parse(event.data) as BodhiSocketMessage;
+              await handleJsonMessage(parsed);
+            } catch {
+              // Ignore unparsable text frames.
+            }
+            return;
           }
-        }
 
-        if (payload.type === "agent_text" && payload.text) {
-          setAgentText(payload.text);
-        }
+          if (event.data instanceof ArrayBuffer) {
+            playPcmChunk(event.data);
+            return;
+          }
 
-        if (payload.type === "tts_chunk" && payload.pcm && audioCtxRef.current) {
-          setIsSpeaking(true);
-          const bytes = Uint8Array.from(atob(payload.pcm), (char) => char.charCodeAt(0));
-          const pcm = new Int16Array(bytes.buffer);
-          const float = new Float32Array(pcm.length);
-          for (let i = 0; i < pcm.length; i += 1) float[i] = pcm[i] / 32767;
+          if (event.data instanceof Blob) {
+            const arrayBuffer = await event.data.arrayBuffer();
+            playPcmChunk(arrayBuffer);
+          }
+        };
 
-          const buffer = audioCtxRef.current.createBuffer(1, float.length, 24000);
-          buffer.copyToChannel(float, 0);
-          const node = audioCtxRef.current.createBufferSource();
-          node.buffer = buffer;
-          node.connect(audioCtxRef.current.destination);
-          node.onended = () => {
-            playbackNodesRef.current = playbackNodesRef.current.filter((entry) => entry !== node);
-            if (playbackNodesRef.current.length === 0) setIsSpeaking(false);
-          };
-          playbackNodesRef.current.push(node);
-          node.start();
-        }
-      };
-
-      ws.onerror = () => setError("Bodhi socket error.");
+        ws.onerror = () => setError("Bodhi socket error.");
+      } catch (startError) {
+        setError(startError instanceof Error ? startError.message : "Failed to initialize Bodhi agent.");
+      }
     };
 
     void start();
 
     return () => {
       cancelled = true;
-      mediaRef.current?.getTracks().forEach((track) => track.stop());
+      readyRef.current = false;
+      setIsListening(false);
+      setIsSpeaking(false);
+
+      teardownAudio();
+
       playbackNodesRef.current.forEach((node) => node.stop());
       playbackNodesRef.current = [];
       wsRef.current?.close();
+      wsRef.current = null;
+
       void audioCtxRef.current?.close();
-      setIsListening(false);
-      setIsSpeaking(false);
+      audioCtxRef.current = null;
+
+      void closeRemoteSession();
+      sessionIdRef.current = "";
     };
-  }, [apiKey, enabled, onFinalTranscript, wsUrl]);
+  }, [agentId, apiKey, enabled, onFinalTranscript, origin]);
 
   const interrupt = () => {
     playbackNodesRef.current.forEach((node) => node.stop());
     playbackNodesRef.current = [];
     setIsSpeaking(false);
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "cancel" }));
+      wsRef.current.send(JSON.stringify({ type: "CANCEL" }));
     }
   };
 
   const sendContextUpdate = (payload: { affectSummary: string; hrElevated: boolean; sessionDurationSeconds: number }) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    if (wsRef.current?.readyState !== WebSocket.OPEN || !readyRef.current) return;
     wsRef.current.send(JSON.stringify({ type: "context_update", ...payload }));
   };
 
