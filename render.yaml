@@ -9,6 +9,12 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: BODHI_ORIGIN
+        value: https://bodhiagent.live
+      - key: BODHI_API_KEY
+        sync: false
+      - key: BODHI_AGENT_ID
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
@@ -23,12 +29,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
-      - key: VITE_BODHI_API_KEY
-        sync: false
-      - key: VITE_BODHI_WS_URL
-        sync: false
-      - key: VITE_BODHI_AGENT_ID
-        sync: false
       - key: VITE_SPATIALREAL_APP_ID
         sync: false
       - key: VITE_SPATIALREAL_AVATAR_ID

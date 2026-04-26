@@ -18,6 +18,7 @@ interface UseBodhiAgentArgs {
 interface BodhiSessionTicket {
   sessionIntentId: string;
   token: string;
+  wsOrigin: string;
 }
 
 interface BodhiSocketMessage {
@@ -70,14 +71,15 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   const sessionIdRef = useRef<string>("");
   const readyRef = useRef(false);
 
-  const origin = useMemo(() => (import.meta.env.VITE_BODHI_WS_URL as string | undefined)?.replace(/\/$/, ""), []);
-  const apiKey = useMemo(() => import.meta.env.VITE_BODHI_API_KEY as string | undefined, []);
-  const agentId = useMemo(() => import.meta.env.VITE_BODHI_AGENT_ID as string | undefined, []);
+  const apiBaseUrl = useMemo(
+    () => (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, ""),
+    []
+  );
 
   useEffect(() => {
     if (!enabled) return;
-    if (!origin || !apiKey) {
-      setError("Missing Bodhi origin or API key.");
+    if (!apiBaseUrl) {
+      setError("Missing VITE_API_BASE_URL for Bodhi session bootstrap.");
       return;
     }
 
@@ -178,16 +180,10 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
     };
 
     const createSessionTicket = async (): Promise<BodhiSessionTicket> => {
-      const response = await fetch(`${origin}/api/mobile/sessions`, {
+      const response = await fetch(`${apiBaseUrl}/session/bodhi-ticket`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          agentProfile: agentId,
-          systemPrompt
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ systemPrompt })
       });
 
       if (!response.ok) {
@@ -195,25 +191,24 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
       }
 
       const payload = (await response.json()) as Partial<BodhiSessionTicket>;
-      if (!payload.sessionIntentId || !payload.token) {
+      if (!payload.sessionIntentId || !payload.token || !payload.wsOrigin) {
         throw new Error("Invalid Bodhi session ticket response.");
       }
 
       return {
         sessionIntentId: payload.sessionIntentId,
-        token: payload.token
+        token: payload.token,
+        wsOrigin: payload.wsOrigin
       };
     };
 
     const closeRemoteSession = async () => {
       if (!sessionIdRef.current) return;
       try {
-        await fetch(`${origin}/api/mobile/sessions/${encodeURIComponent(sessionIdRef.current)}/close`, {
+        await fetch(`${apiBaseUrl}/session/bodhi-close`, {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          }
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sessionIdRef.current })
         });
       } catch {
         // Non-fatal best effort close.
@@ -230,7 +225,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
         const ticket = await createSessionTicket();
         if (cancelled) return;
 
-        const socketUrl = `${toWsOrigin(origin)}/ws/mobile?sessionIntentId=${encodeURIComponent(ticket.sessionIntentId)}&token=${encodeURIComponent(ticket.token)}`;
+        const socketUrl = `${toWsOrigin(ticket.wsOrigin)}/ws/mobile?sessionIntentId=${encodeURIComponent(ticket.sessionIntentId)}&token=${encodeURIComponent(ticket.token)}`;
         const ws = new WebSocket(socketUrl);
         ws.binaryType = "arraybuffer";
         wsRef.current = ws;
@@ -288,7 +283,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
       void closeRemoteSession();
       sessionIdRef.current = "";
     };
-  }, [agentId, apiKey, enabled, onFinalTranscript, origin]);
+  }, [apiBaseUrl, enabled, onFinalTranscript]);
 
   const interrupt = () => {
     playbackNodesRef.current.forEach((node) => node.stop());
