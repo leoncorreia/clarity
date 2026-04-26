@@ -19,6 +19,7 @@ function App() {
   const [devHud, setDevHud] = useState(false);
   const [toasts, setToasts] = useState<ActionToastItem[]>([]);
   const [error, setError] = useState("");
+  const [typedInput, setTypedInput] = useState("");
   const mountRef = useRef<HTMLDivElement | null>(null);
 
   const { hrBpm, connect: connectBiometrics } = useBiometrics();
@@ -127,6 +128,12 @@ function App() {
 
   const beginSession = async () => {
     try {
+      const permissionStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true
+      });
+      permissionStream.getTracks().forEach((track) => track.stop());
+
       const started = await startSession();
       setSessionId(started.sessionId);
       setSessionStartedAt(Date.now());
@@ -152,6 +159,13 @@ function App() {
 
   const showEndButton = sessionStartedAt ? Date.now() - sessionStartedAt > 60000 : false;
 
+  const sendTypedMessage = () => {
+    const trimmed = typedInput.trim();
+    if (!trimmed) return;
+    bodhi.sendText(trimmed);
+    setTypedInput("");
+  };
+
   return (
     <div className="app-shell">
       {!consentGranted ? <ConsentGate onAccept={() => void beginSession()} /> : null}
@@ -169,6 +183,31 @@ function App() {
           <div className="font-semibold">Crisis Coach</div>
           <div className="text-slate-300 mt-1">{bodhi.transcript || "Listening for user speech..."}</div>
           <div className="text-cyan-300 mt-2">Agent: {bodhi.agentText || "Awaiting response..."}</div>
+          <div className="mt-3 flex gap-2">
+            <input
+              value={typedInput}
+              onChange={(event) => setTypedInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") sendTypedMessage();
+              }}
+              placeholder="Type if microphone fails..."
+              className="flex-1 rounded bg-slate-900/80 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+            />
+            <button
+              type="button"
+              onClick={sendTypedMessage}
+              className="rounded px-2 py-1 bg-blue-700 text-xs"
+            >
+              Send
+            </button>
+            <button
+              type="button"
+              onClick={() => bodhi.setMicEnabled(!bodhi.micEnabled)}
+              className="rounded px-2 py-1 bg-slate-700 text-xs"
+            >
+              {bodhi.micEnabled ? "Pause mic" : "Resume mic"}
+            </button>
+          </div>
           {(error || bodhi.error) ? <div className="mt-2 text-red-300">{error || bodhi.error}</div> : null}
         </div>
 

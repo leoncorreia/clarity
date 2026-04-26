@@ -5,7 +5,10 @@ export interface BodhiAgentState {
   agentText: string;
   isSpeaking: boolean;
   isListening: boolean;
+  micEnabled: boolean;
   interrupt: () => void;
+  sendText: (text: string) => void;
+  setMicEnabled: (enabled: boolean) => void;
   sendContextUpdate: (payload: { affectSummary: string; hrElevated: boolean; sessionDurationSeconds: number }) => void;
   error: string;
 }
@@ -59,6 +62,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   const [agentText, setAgentText] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [micEnabled, setMicEnabledState] = useState(true);
   const [error, setError] = useState("");
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -70,6 +74,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   const serverSampleRateRef = useRef<number>(24000);
   const sessionIdRef = useRef<string>("");
   const readyRef = useRef(false);
+  const micEnabledRef = useRef(true);
 
   const apiBaseUrl = useMemo(
     () => (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, ""),
@@ -125,7 +130,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
 
       processor.onaudioprocess = (event) => {
         const ws = wsRef.current;
-        if (!ws || ws.readyState !== WebSocket.OPEN || !readyRef.current) return;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !readyRef.current || !micEnabledRef.current) return;
 
         const channel = event.inputBuffer.getChannelData(0);
         const pcm = new Int16Array(channel.length);
@@ -137,7 +142,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
 
       sourceRef.current = source;
       processorRef.current = processor;
-      setIsListening(true);
+      setIsListening(micEnabledRef.current);
     };
 
     const handleJsonMessage = async (message: BodhiSocketMessage) => {
@@ -300,12 +305,28 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
     wsRef.current.send(JSON.stringify({ type: "context_update", ...payload }));
   };
 
+  const sendText = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || wsRef.current?.readyState !== WebSocket.OPEN || !readyRef.current) return;
+    wsRef.current.send(JSON.stringify({ type: "text_input", text: trimmed }));
+    setTranscript(trimmed);
+  };
+
+  const setMicEnabled = (enabledValue: boolean) => {
+    micEnabledRef.current = enabledValue;
+    setMicEnabledState(enabledValue);
+    setIsListening(enabledValue && readyRef.current);
+  };
+
   return {
     transcript,
     agentText,
     isSpeaking,
     isListening,
+    micEnabled,
     interrupt,
+    sendText,
+    setMicEnabled,
     sendContextUpdate,
     error
   };
