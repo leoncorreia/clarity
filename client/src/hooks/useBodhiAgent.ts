@@ -74,7 +74,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
   const playbackNodesRef = useRef<AudioBufferSourceNode[]>([]);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const serverSampleRateRef = useRef<number>(24000);
+  const serverSampleRateRef = useRef<number>(48000);
   const sessionIdRef = useRef<string>("");
   const readyRef = useRef(false);
   const micEnabledRef = useRef(true);
@@ -86,6 +86,12 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
     () => (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, ""),
     []
   );
+  const configuredOutputSampleRate = useMemo(() => {
+    const raw = import.meta.env.VITE_BODHI_TTS_SAMPLE_RATE as string | undefined;
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }, []);
 
   useEffect(() => {
     onFinalTranscriptRef.current = onFinalTranscript;
@@ -115,7 +121,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
 
     const playPcmChunk = (buffer: ArrayBuffer) => {
       if (!audioCtxRef.current) return;
-      const sampleRate = serverSampleRateRef.current || 24000;
+      const sampleRate = serverSampleRateRef.current || audioCtxRef.current.sampleRate || 48000;
       const float = pcm16ToFloat32(buffer);
       const audioBuffer = audioCtxRef.current.createBuffer(1, float.length, sampleRate);
       const channelData = new Float32Array(float.length);
@@ -179,10 +185,15 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
               (message.payload as { sampleRate?: number; outputSampleRate?: number }).outputSampleRate
             : undefined);
 
-        if (typeof sampleRateCandidate === "number" && Number.isFinite(sampleRateCandidate)) {
+        if (
+          typeof sampleRateCandidate === "number" &&
+          Number.isFinite(sampleRateCandidate) &&
+          sampleRateCandidate >= 8000 &&
+          sampleRateCandidate <= 96000
+        ) {
           serverSampleRateRef.current = sampleRateCandidate;
         } else {
-          serverSampleRateRef.current = 16000;
+          serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current?.sampleRate ?? 48000;
         }
         return;
       }
@@ -257,7 +268,8 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         mediaRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         if (cancelled) return;
 
-        audioCtxRef.current = new AudioContext({ sampleRate: 24000 });
+        audioCtxRef.current = new AudioContext();
+        serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current.sampleRate;
 
         const ticket = await createSessionTicket();
         if (cancelled) return;
@@ -321,7 +333,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
       void closeRemoteSession();
       sessionIdRef.current = "";
     };
-  }, [apiBaseUrl, enabled]);
+  }, [apiBaseUrl, configuredOutputSampleRate, enabled]);
 
   const interrupt = () => {
     playbackNodesRef.current.forEach((node) => node.stop());

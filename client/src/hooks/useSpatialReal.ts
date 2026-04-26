@@ -4,7 +4,8 @@ import {
   AvatarSDK,
   AvatarView,
   DrivingServiceMode,
-  Environment
+  Environment,
+  LogLevel
 } from "@spatialwalk/avatarkit";
 
 interface ExpressionPayload {
@@ -17,12 +18,15 @@ export function useSpatialReal() {
 
   const avatarViewRef = useRef<AvatarView | null>(null);
   const connectingRef = useRef(false);
+  const endChunkTimerRef = useRef<number | null>(null);
+  const lastChunkRef = useRef<ArrayBuffer | null>(null);
 
   const config = useMemo(
     () => ({
       appId: import.meta.env.VITE_SPATIALREAL_APP_ID as string | undefined,
       avatarId: import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined,
-      sessionToken: import.meta.env.VITE_SPATIALREAL_SESSION_TOKEN as string | undefined
+      sessionToken: import.meta.env.VITE_SPATIALREAL_SESSION_TOKEN as string | undefined,
+      audioSampleRate: Number(import.meta.env.VITE_BODHI_TTS_SAMPLE_RATE || "16000")
     }),
     []
   );
@@ -41,7 +45,12 @@ export function useSpatialReal() {
       if (!AvatarSDK.isInitialized) {
         await AvatarSDK.initialize(config.appId, {
           environment: Environment.intl,
-          drivingServiceMode: DrivingServiceMode.sdk
+          drivingServiceMode: DrivingServiceMode.sdk,
+          logLevel: LogLevel.warning,
+          audioFormat: {
+            channelCount: 1,
+            sampleRate: config.audioSampleRate
+          }
         });
       }
 
@@ -59,6 +68,7 @@ export function useSpatialReal() {
 
       await view.controller.initializeAudioContext();
       await view.controller.start();
+      (view.controller as unknown as { volume?: number }).volume = 0;
 
       setAvatarReady(true);
       setError("");
@@ -67,7 +77,7 @@ export function useSpatialReal() {
     } finally {
       connectingRef.current = false;
     }
-  }, [avatarReady, config.appId, config.avatarId, config.sessionToken]);
+  }, [avatarReady, config.appId, config.audioSampleRate, config.avatarId, config.sessionToken]);
 
   const setExpression = useCallback((payload: ExpressionPayload) => {
     const view = avatarViewRef.current;
@@ -107,9 +117,27 @@ export function useSpatialReal() {
     }
   }, []);
 
-  const driveAudio = useCallback((pcmChunk: ArrayBuffer, isFinal = false) => {
+  const driveAudio = useCallback((pcmChunk: ArrayBuffer) => {
     const view = avatarViewRef.current;
     if (!view || pcmChunk.byteLength === 0) return;
+
+    const controller = view.controller as unknown as {
+      send?: (audio: ArrayBuffer, end: boolean) => string | null;
+    };
+    if (controller.send) {
+      lastChunkRef.current = pcmChunk;
+      controller.send(pcmChunk, false);
+      if (endChunkTimerRef.current !== null) {
+        window.clearTimeout(endChunkTimerRef.current);
+      }
+      endChunkTimerRef.current = window.setTimeout(() => {
+        if (lastChunkRef.current) {
+          controller.send?.(lastChunkRef.current, true);
+          lastChunkRef.current = null;
+        }
+        endChunkTimerRef.current = null;
+      }, 260);
+    }
 
     const pcm = new Int16Array(pcmChunk);
     let sum = 0;
@@ -117,7 +145,7 @@ export function useSpatialReal() {
       sum += Math.abs(pcm[i] / 32768);
     }
     const avg = pcm.length > 0 ? sum / pcm.length : 0;
-    const mouthAmount = Math.min(1, avg * 4);
+    const mouthAmount = Math.min(1, Math.max(0, (avg - 0.01) * 12));
     setExpression({
       mouth_open: mouthAmount,
       viseme_strength: mouthAmount,
@@ -126,6 +154,11 @@ export function useSpatialReal() {
   }, []);
 
   const disconnect = useCallback(() => {
+    if (endChunkTimerRef.current !== null) {
+      window.clearTimeout(endChunkTimerRef.current);
+      endChunkTimerRef.current = null;
+    }
+    lastChunkRef.current = null;
     avatarViewRef.current?.controller.close();
     avatarViewRef.current?.dispose();
     avatarViewRef.current = null;
