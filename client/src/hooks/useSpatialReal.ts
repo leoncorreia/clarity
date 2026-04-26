@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   AvatarManager,
   AvatarSDK,
@@ -16,6 +16,7 @@ export function useSpatialReal() {
   const [error, setError] = useState("");
 
   const avatarViewRef = useRef<AvatarView | null>(null);
+  const connectingRef = useRef(false);
 
   const config = useMemo(
     () => ({
@@ -26,13 +27,17 @@ export function useSpatialReal() {
     []
   );
 
-  const connect = async (target: HTMLElement) => {
+  const connect = useCallback(async (target: HTMLElement) => {
     if (!config.appId || !config.avatarId || !config.sessionToken) {
       setError("Missing SpatialReal app ID, avatar ID, or session token.");
       return;
     }
+    if (connectingRef.current || avatarReady) {
+      return;
+    }
 
     try {
+      connectingRef.current = true;
       if (!AvatarSDK.isInitialized) {
         await AvatarSDK.initialize(config.appId, {
           environment: Environment.intl,
@@ -59,10 +64,12 @@ export function useSpatialReal() {
       setError("");
     } catch (connectError) {
       setError(connectError instanceof Error ? connectError.message : "Avatar connection failed.");
+    } finally {
+      connectingRef.current = false;
     }
-  };
+  }, [avatarReady, config.appId, config.avatarId, config.sessionToken]);
 
-  const setExpression = (payload: ExpressionPayload) => {
+  const setExpression = useCallback((payload: ExpressionPayload) => {
     const view = avatarViewRef.current;
     if (!view) return;
 
@@ -79,9 +86,9 @@ export function useSpatialReal() {
     if (controller.applyExpression) {
       controller.applyExpression(payload);
     }
-  };
+  }, []);
 
-  const syncLips = async (text: string) => {
+  const syncLips = useCallback(async (text: string) => {
     const view = avatarViewRef.current;
     if (!view || !text.trim()) return;
 
@@ -98,14 +105,15 @@ export function useSpatialReal() {
     if (controller.syncLips) {
       controller.syncLips(text);
     }
-  };
+  }, []);
 
-  const disconnect = () => {
+  const disconnect = useCallback(() => {
     avatarViewRef.current?.controller.close();
     avatarViewRef.current?.dispose();
     avatarViewRef.current = null;
+    connectingRef.current = false;
     setAvatarReady(false);
-  };
+  }, []);
 
   return { connect, setExpression, syncLips, disconnect, avatarReady, error };
 }
