@@ -201,8 +201,8 @@ function App() {
         onDismiss={(id) => setToasts((prev) => prev.filter((item) => item.id !== id))}
       />
 
-      <div className="absolute top-4 left-4 right-4 z-10 flex items-start justify-between gap-3">
-        <div className="glass rounded-lg p-3 max-w-xl text-sm">
+      <div className="absolute left-1/2 bottom-24 -translate-x-1/2 z-20 w-[min(92vw,720px)]">
+        <div className="glass rounded-lg p-3 text-sm">
           <div className="font-semibold">Crisis Coach</div>
           <div className="text-slate-300 mt-1">{bodhi.transcript || "Listening for user speech..."}</div>
           <div className="text-cyan-300 mt-2">Agent: {bodhi.agentText || "Awaiting response..."}</div>
@@ -259,7 +259,9 @@ function App() {
           ) : null}
           {(error || bodhi.error) ? <div className="mt-2 text-red-300">{error || bodhi.error}</div> : null}
         </div>
+      </div>
 
+      <div className="absolute top-4 right-4 z-10">
         <div className="glass rounded-lg p-3 text-xs">
           <div>Emotion: {dominantEmotion || "n/a"}</div>
           <div>HR: {hrBpm ?? "n/a"}</div>
