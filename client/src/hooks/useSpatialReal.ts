@@ -18,6 +18,8 @@ export function useSpatialReal() {
 
   const avatarViewRef = useRef<AvatarView | null>(null);
   const connectingRef = useRef(false);
+  const endChunkTimerRef = useRef<number | null>(null);
+  const lastChunkRef = useRef<ArrayBuffer | null>(null);
 
   const config = useMemo(
     () => ({
@@ -118,6 +120,28 @@ export function useSpatialReal() {
   const driveAudio = useCallback((pcmChunk: ArrayBuffer) => {
     const view = avatarViewRef.current;
     if (!view || pcmChunk.byteLength === 0) return;
+    const controller = view.controller as unknown as {
+      send?: (audio: ArrayBuffer, end: boolean) => string | null;
+      volume?: number;
+    };
+
+    if (typeof controller.volume === "number") {
+      controller.volume = 0;
+    }
+    if (controller.send) {
+      lastChunkRef.current = pcmChunk;
+      controller.send(pcmChunk, false);
+      if (endChunkTimerRef.current !== null) {
+        window.clearTimeout(endChunkTimerRef.current);
+      }
+      endChunkTimerRef.current = window.setTimeout(() => {
+        if (lastChunkRef.current) {
+          controller.send?.(lastChunkRef.current, true);
+          lastChunkRef.current = null;
+        }
+        endChunkTimerRef.current = null;
+      }, 220);
+    }
 
     const pcm = new Int16Array(pcmChunk);
     let sum = 0;
@@ -134,6 +158,11 @@ export function useSpatialReal() {
   }, []);
 
   const disconnect = useCallback(() => {
+    if (endChunkTimerRef.current !== null) {
+      window.clearTimeout(endChunkTimerRef.current);
+      endChunkTimerRef.current = null;
+    }
+    lastChunkRef.current = null;
     avatarViewRef.current?.controller.close();
     avatarViewRef.current?.dispose();
     avatarViewRef.current = null;
