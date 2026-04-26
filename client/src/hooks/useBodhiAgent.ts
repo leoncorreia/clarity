@@ -89,7 +89,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
   const playbackNodesRef = useRef<AudioBufferSourceNode[]>([]);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const serverSampleRateRef = useRef<number>(16000);
+  const serverSampleRateRef = useRef<number>(24000);
   const sessionIdRef = useRef<string>("");
   const readyRef = useRef(false);
   const micEnabledRef = useRef(true);
@@ -140,12 +140,16 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
       if (!audioCtxRef.current) return;
       const sourceRate = serverSampleRateRef.current || configuredOutputSampleRate || audioCtxRef.current.sampleRate || 48000;
       const targetRate = audioCtxRef.current.sampleRate || 48000;
+      console.log("[BodhiAudio] sourceSampleRateHz:", sourceRate);
+      console.log("[BodhiAudio] audioContextSampleRateHz:", targetRate);
+      console.log("[BodhiAudio] incomingFrameBytes:", buffer.byteLength);
       const float = pcm16ToFloat32(buffer);
       const resampled = resampleFloat32(float, sourceRate, targetRate);
       const audioBuffer = audioCtxRef.current.createBuffer(1, resampled.length, targetRate);
       const channelData = new Float32Array(resampled.length);
       channelData.set(resampled);
       audioBuffer.copyToChannel(channelData, 0);
+      console.log("[BodhiAudio] chunkDurationSeconds:", audioBuffer.duration);
 
       const node = audioCtxRef.current.createBufferSource();
       node.buffer = audioBuffer;
@@ -212,7 +216,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         ) {
           serverSampleRateRef.current = sampleRateCandidate;
         } else {
-          serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current?.sampleRate ?? 48000;
+          serverSampleRateRef.current = configuredOutputSampleRate ?? 24000;
         }
         return;
       }
@@ -301,7 +305,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         if (cancelled) return;
 
         audioCtxRef.current = new AudioContext();
-        serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current.sampleRate;
+        serverSampleRateRef.current = configuredOutputSampleRate ?? 24000;
 
         const ticket = await createSessionTicket();
         if (cancelled) return;
