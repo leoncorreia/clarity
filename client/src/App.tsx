@@ -22,7 +22,19 @@ function App() {
   const [typedInput, setTypedInput] = useState("");
   const [inputMode, setInputMode] = useState<"mic" | "text">("mic");
   const [pushToTalkActive, setPushToTalkActive] = useState(false);
+  const [selectedAvatarId, setSelectedAvatarId] = useState("");
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const miaImage = new URL("../../src/lovable/Mia.png", import.meta.url).href;
+  const kellanImage = new URL("../../src/lovable/kellan.png", import.meta.url).href;
+  const avatarOptions = useMemo(() => {
+    const avatarA = (import.meta.env.VITE_SPATIALREAL_AVATAR_ID_A as string | undefined)?.trim();
+    const avatarB = (import.meta.env.VITE_SPATIALREAL_AVATAR_ID_B as string | undefined)?.trim();
+    const fallback = (import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined)?.trim();
+    return [
+      { id: avatarA || fallback || "", name: "Mia", imageSrc: miaImage },
+      { id: avatarB || fallback || "", name: "Kellan", imageSrc: kellanImage }
+    ].filter((option, index, list) => option.id && list.findIndex((item) => item.id === option.id) === index);
+  }, [kellanImage, miaImage]);
 
   const { hrBpm, connect: connectBiometrics } = useBiometrics();
 
@@ -35,7 +47,8 @@ function App() {
     }
   });
 
-  const { connect, setExpression, syncLips, driveAudio, sendAudio, endAudio, avatarReady, error: avatarError } = useSpatialReal();
+  const { connect, setExpression, syncLips, driveAudio, sendAudio, endAudio, avatarReady, error: avatarError } =
+    useSpatialReal(selectedAvatarId || undefined);
 
   const distressSustained = useMemo(() => {
     const cutoff = Date.now() - 30000;
@@ -151,6 +164,10 @@ function App() {
 
   const beginSession = async () => {
     try {
+      if (!selectedAvatarId && avatarOptions.length > 0) {
+        setError("Please select an avatar before starting.");
+        return;
+      }
       const permissionStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: true
@@ -191,7 +208,17 @@ function App() {
 
   return (
     <div className="app-shell">
-      {!consentGranted ? <ConsentGate onAccept={() => void beginSession()} /> : null}
+      {!consentGranted ? (
+        <ConsentGate
+          onAccept={() => void beginSession()}
+          selectedAvatarId={selectedAvatarId}
+          onSelectAvatar={(id) => {
+            setSelectedAvatarId(id);
+            setError("");
+          }}
+          avatarOptions={avatarOptions}
+        />
+      ) : null}
 
       <AvatarCanvas mountRef={mountRef} error={avatarError} />
 

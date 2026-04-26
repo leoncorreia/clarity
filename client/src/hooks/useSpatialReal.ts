@@ -12,7 +12,7 @@ interface ExpressionPayload {
   [key: string]: number | string | boolean;
 }
 
-export function useSpatialReal() {
+export function useSpatialReal(selectedAvatarId?: string) {
   const [avatarReady, setAvatarReady] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,10 +23,10 @@ export function useSpatialReal() {
   const config = useMemo(
     () => ({
       appId: import.meta.env.VITE_SPATIALREAL_APP_ID as string | undefined,
-      avatarId: import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined,
+      avatarId: selectedAvatarId || (import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined),
       sessionToken: import.meta.env.VITE_SPATIALREAL_SESSION_TOKEN as string | undefined
     }),
-    []
+    [selectedAvatarId]
   );
 
   const connect = useCallback(async (target: HTMLElement) => {
@@ -54,10 +54,19 @@ export function useSpatialReal() {
 
       AvatarSDK.setSessionToken(config.sessionToken);
 
+      const selectedAvatarId = config.avatarId;
+      const currentAvatarId = target.dataset.avatarId;
+      if (avatarViewRef.current && currentAvatarId && currentAvatarId !== selectedAvatarId) {
+        avatarViewRef.current.controller.close();
+        avatarViewRef.current.dispose();
+        avatarViewRef.current = null;
+      }
+
       if (!avatarViewRef.current) {
-        const avatar = await AvatarManager.shared.load(config.avatarId);
+        const avatar = await AvatarManager.shared.load(selectedAvatarId);
         console.log("Avatar keys:", Object.getOwnPropertyNames(Object.getPrototypeOf(avatar)));
         avatarViewRef.current = new AvatarView(avatar, target);
+        target.dataset.avatarId = selectedAvatarId;
       }
 
       const view = avatarViewRef.current;
