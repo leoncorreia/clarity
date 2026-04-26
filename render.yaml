@@ -34,3 +34,9 @@ services:
         value: https://api.bodhiagent.live
       - key: VITE_API_BASE_URL
         sync: false
+      - key: VITE_SPATIALREAL_APP_ID
+        sync: false
+      - key: VITE_SPATIALREAL_API_KEY
+        sync: false
+      - key: VITE_SPATIALREAL_AVATAR_ID
+        value: 7662336d-8eda-4dd0-ae39-5119777679ba
