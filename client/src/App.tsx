@@ -34,7 +34,7 @@ function App() {
     }
   });
 
-  const { connect, setExpression, syncLips, avatarReady, error: avatarError } = useSpatialReal();
+  const { connect, setExpression, syncLips, driveAudio, avatarReady, error: avatarError } = useSpatialReal();
 
   const distressSustained = useMemo(() => {
     const cutoff = Date.now() - 30000;
@@ -72,7 +72,10 @@ function App() {
 
   const bodhi = useBodhiAgent({
     enabled: consentGranted && Boolean(sessionId),
-    onFinalTranscript: handleFinalTranscript
+    onFinalTranscript: handleFinalTranscript,
+    onTtsPcmChunk: (chunk) => {
+      driveAudio(chunk);
+    }
   });
 
   useEffect(() => {

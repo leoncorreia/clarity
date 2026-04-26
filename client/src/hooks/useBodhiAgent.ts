@@ -16,6 +16,7 @@ export interface BodhiAgentState {
 interface UseBodhiAgentArgs {
   enabled: boolean;
   onFinalTranscript: (text: string) => void;
+  onTtsPcmChunk?: (chunk: ArrayBuffer) => void;
 }
 
 interface BodhiSessionTicket {
@@ -34,7 +35,7 @@ interface BodhiSocketMessage {
   sessionId?: string;
 }
 
-const systemPrompt = `You are a compassionate mental health first responder. You are trained in CBT grounding techniques (5-4-3-2-1 sensory), box breathing guidance, and de-escalation. Never dismiss feelings. Never suggest the user is overreacting. If the user expresses suicidal ideation, always validate first, then gently ask if they are safe. Keep responses under 3 sentences unless the user asks for more. You can be interrupted at any time — treat interruption as the user needing to speak, not as rudeness. Your goal is to keep the person present, grounded, and connected until professional help is available.`;
+const systemPrompt = `You are a compassionate mental health first responder. You are trained in CBT grounding techniques (5-4-3-2-1 sensory), box breathing guidance, and de-escalation. Never dismiss feelings. Never suggest the user is overreacting. If the user expresses suicidal ideation, always validate first, then gently ask if they are safe. Keep responses under 3 sentences unless the user asks for more. You can be interrupted at any time  treat interruption as the user needing to speak, not as rudeness. Your goal is to keep the person present, grounded, and connected until professional help is available.`;
 
 const toWsOrigin = (origin: string): string => {
   const trimmed = origin.replace(/\/$/, "");
@@ -57,7 +58,7 @@ const pcm16ToFloat32 = (buffer: ArrayBuffer): Float32Array => {
   return float;
 };
 
-export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs): BodhiAgentState {
+export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: UseBodhiAgentArgs): BodhiAgentState {
   const [transcript, setTranscript] = useState("");
   const [agentText, setAgentText] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -76,6 +77,8 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   const readyRef = useRef(false);
   const micEnabledRef = useRef(true);
   const onFinalTranscriptRef = useRef(onFinalTranscript);
+  const onTtsPcmChunkRef = useRef(onTtsPcmChunk);
+  const nextPlaybackTimeRef = useRef(0);
 
   const apiBaseUrl = useMemo(
     () => (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, ""),
@@ -85,6 +88,10 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   useEffect(() => {
     onFinalTranscriptRef.current = onFinalTranscript;
   }, [onFinalTranscript]);
+
+  useEffect(() => {
+    onTtsPcmChunkRef.current = onTtsPcmChunk;
+  }, [onTtsPcmChunk]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -122,7 +129,14 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
       };
       playbackNodesRef.current.push(node);
       setIsSpeaking(true);
-      node.start();
+      const now = audioCtxRef.current.currentTime;
+      if (nextPlaybackTimeRef.current < now) {
+        nextPlaybackTimeRef.current = now;
+      }
+      node.start(nextPlaybackTimeRef.current);
+      nextPlaybackTimeRef.current += audioBuffer.duration;
+
+      onTtsPcmChunkRef.current?.(buffer);
     };
 
     const startMicStreaming = async () => {
@@ -277,6 +291,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
     return () => {
       cancelled = true;
       readyRef.current = false;
+      nextPlaybackTimeRef.current = 0;
       setIsListening(false);
       setIsSpeaking(false);
 
@@ -298,6 +313,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   const interrupt = () => {
     playbackNodesRef.current.forEach((node) => node.stop());
     playbackNodesRef.current = [];
+    nextPlaybackTimeRef.current = audioCtxRef.current?.currentTime ?? 0;
     setIsSpeaking(false);
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {

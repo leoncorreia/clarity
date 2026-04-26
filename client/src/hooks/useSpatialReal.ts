@@ -107,6 +107,25 @@ export function useSpatialReal() {
     }
   }, []);
 
+  const driveAudio = useCallback((pcmChunk: ArrayBuffer, isFinal = false) => {
+    const view = avatarViewRef.current;
+    if (!view || pcmChunk.byteLength === 0) return;
+
+    const controller = view.controller as unknown as {
+      send?: (audio: ArrayBuffer, endOfStream?: boolean) => void;
+      pushAudio?: (audio: ArrayBuffer) => void;
+    };
+
+    if (controller.send) {
+      controller.send(pcmChunk, isFinal);
+      return;
+    }
+
+    if (controller.pushAudio) {
+      controller.pushAudio(pcmChunk);
+    }
+  }, []);
+
   const disconnect = useCallback(() => {
     avatarViewRef.current?.controller.close();
     avatarViewRef.current?.dispose();
@@ -115,5 +134,5 @@ export function useSpatialReal() {
     setAvatarReady(false);
   }, []);
 
-  return { connect, setExpression, syncLips, disconnect, avatarReady, error };
+  return { connect, setExpression, syncLips, driveAudio, disconnect, avatarReady, error };
 }
