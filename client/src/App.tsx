@@ -34,7 +34,7 @@ function App() {
     }
   });
 
-  const { connect, setExpression, syncLips, driveAudio, avatarReady, error: avatarError } = useSpatialReal();
+  const { connect, setExpression, syncLips, driveAudio, sendAudio, avatarReady, error: avatarError } = useSpatialReal();
 
   const distressSustained = useMemo(() => {
     const cutoff = Date.now() - 30000;
@@ -74,6 +74,8 @@ function App() {
     enabled: consentGranted && Boolean(sessionId),
     onFinalTranscript: handleFinalTranscript,
     onTtsPcmChunk: (chunk) => {
+      // Keep local WebAudio playback inside Bodhi hook; this is only for avatar lip sync.
+      sendAudio(chunk);
       driveAudio(chunk);
     }
   });

@@ -57,6 +57,7 @@ export function useSpatialReal() {
 
       if (!avatarViewRef.current) {
         const avatar = await AvatarManager.shared.load(config.avatarId);
+        console.log("Avatar keys:", Object.getOwnPropertyNames(Object.getPrototypeOf(avatar)));
         avatarViewRef.current = new AvatarView(avatar, target);
       }
 
@@ -68,6 +69,8 @@ export function useSpatialReal() {
       await view.controller.initializeAudioContext();
       await view.controller.start();
       (view.controller as unknown as { volume?: number }).volume = 0;
+      console.log("SpatialReal controller keys:", Object.getOwnPropertyNames(Object.getPrototypeOf(view.controller)));
+      console.log("SpatialReal controller own:", Object.keys(view.controller));
 
       setAvatarReady(true);
       setError("");
@@ -97,57 +100,15 @@ export function useSpatialReal() {
     }
   }, []);
 
-  const syncLips = useCallback(async (text: string) => {
-    const view = avatarViewRef.current;
-    if (!view || !text.trim()) return;
-
-    const controller = view.controller as unknown as {
-      syncLips?: (input: string) => void;
-      setTextViseme?: (input: string) => void;
-    };
-
-    if (controller.syncLips) {
-      controller.syncLips(text);
-      return;
-    }
-
-    if (controller.setTextViseme) {
-      controller.setTextViseme(text);
-    }
+  const syncLips = useCallback(async (_text: string) => {
+    // Intentionally disabled until we confirm real SDK methods from runtime introspection.
   }, []);
 
   const driveAudio = useCallback((pcmChunk: ArrayBuffer) => {
     const view = avatarViewRef.current;
     if (!view || pcmChunk.byteLength === 0) return;
-
-    const pcm = new Int16Array(pcmChunk);
-    let sum = 0;
-    for (let i = 0; i < pcm.length; i += 1) {
-      sum += Math.abs(pcm[i] / 32768);
-    }
-    const avg = pcm.length > 0 ? sum / pcm.length : 0;
-    const mouthAmount = Math.min(1, Math.max(0, (avg - 0.01) * 12));
-
-    const controller = view.controller as unknown as {
-      syncLips?: (input: string) => void;
-      setTextViseme?: (input: string) => void;
-    };
-    const now = Date.now();
-    if (now - lastVisemeAtRef.current >= 80) {
-      const visemeToken = mouthAmount > 0.18 ? "ah" : mouthAmount > 0.08 ? "oh" : "m";
-      if (controller.syncLips) {
-        controller.syncLips(visemeToken);
-      } else if (controller.setTextViseme) {
-        controller.setTextViseme(visemeToken);
-      }
-      lastVisemeAtRef.current = now;
-    }
-
-    setExpression({
-      mouth_open: mouthAmount,
-      viseme_strength: mouthAmount,
-      talking: mouthAmount > 0.02
-    });
+    // Intentionally disabled until we confirm real SDK methods from runtime introspection.
+    lastVisemeAtRef.current = Date.now();
   }, []);
 
   const disconnect = useCallback(() => {
@@ -158,5 +119,11 @@ export function useSpatialReal() {
     setAvatarReady(false);
   }, []);
 
-  return { connect, setExpression, syncLips, driveAudio, disconnect, avatarReady, error };
+  const sendAudio = useCallback((buffer: ArrayBuffer) => {
+    const view = avatarViewRef.current;
+    if (!view || buffer.byteLength === 0) return;
+    (view.controller as unknown as { send?: (audioData: ArrayBuffer, end: boolean) => string }).send?.(buffer, true);
+  }, []);
+
+  return { connect, setExpression, syncLips, driveAudio, sendAudio, disconnect, avatarReady, error };
 }
