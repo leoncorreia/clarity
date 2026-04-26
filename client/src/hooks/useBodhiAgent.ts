@@ -60,6 +60,21 @@ const pcm16ToFloat32 = (buffer: ArrayBuffer): Float32Array => {
   return float;
 };
 
+const resampleFloat32 = (input: Float32Array, sourceRate: number, targetRate: number): Float32Array => {
+  if (sourceRate === targetRate || input.length === 0) return input;
+  const ratio = sourceRate / targetRate;
+  const outputLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(outputLength);
+  for (let i = 0; i < outputLength; i += 1) {
+    const srcIndex = i * ratio;
+    const index0 = Math.floor(srcIndex);
+    const index1 = Math.min(index0 + 1, input.length - 1);
+    const t = srcIndex - index0;
+    output[i] = input[index0] * (1 - t) + input[index1] * t;
+  }
+  return output;
+};
+
 export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: UseBodhiAgentArgs): BodhiAgentState {
   const [transcript, setTranscript] = useState("");
   const [agentText, setAgentText] = useState("");
@@ -74,13 +89,15 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
   const playbackNodesRef = useRef<AudioBufferSourceNode[]>([]);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const serverSampleRateRef = useRef<number>(48000);
+  const serverSampleRateRef = useRef<number>(16000);
   const sessionIdRef = useRef<string>("");
   const readyRef = useRef(false);
   const micEnabledRef = useRef(true);
   const onFinalTranscriptRef = useRef(onFinalTranscript);
   const onTtsPcmChunkRef = useRef(onTtsPcmChunk);
   const nextPlaybackTimeRef = useRef(0);
+  const activeSocketRef = useRef<WebSocket | null>(null);
+  const streamEpochRef = useRef(0);
 
   const apiBaseUrl = useMemo(
     () => (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, ""),
@@ -121,11 +138,13 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
 
     const playPcmChunk = (buffer: ArrayBuffer) => {
       if (!audioCtxRef.current) return;
-      const sampleRate = serverSampleRateRef.current || audioCtxRef.current.sampleRate || 48000;
+      const sourceRate = serverSampleRateRef.current || configuredOutputSampleRate || 16000;
+      const targetRate = audioCtxRef.current.sampleRate || 48000;
       const float = pcm16ToFloat32(buffer);
-      const audioBuffer = audioCtxRef.current.createBuffer(1, float.length, sampleRate);
-      const channelData = new Float32Array(float.length);
-      channelData.set(float);
+      const resampled = resampleFloat32(float, sourceRate, targetRate);
+      const audioBuffer = audioCtxRef.current.createBuffer(1, resampled.length, targetRate);
+      const channelData = new Float32Array(resampled.length);
+      channelData.set(resampled);
       audioBuffer.copyToChannel(channelData, 0);
 
       const node = audioCtxRef.current.createBufferSource();
@@ -193,7 +212,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         ) {
           serverSampleRateRef.current = sampleRateCandidate;
         } else {
-          serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current?.sampleRate ?? 48000;
+          serverSampleRateRef.current = configuredOutputSampleRate ?? 16000;
         }
         return;
       }
@@ -265,11 +284,24 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
 
     const start = async () => {
       try {
+        streamEpochRef.current += 1;
+        const epoch = streamEpochRef.current;
+
+        if (activeSocketRef.current && activeSocketRef.current.readyState <= WebSocket.OPEN) {
+          activeSocketRef.current.close();
+        }
+        activeSocketRef.current = null;
+        wsRef.current = null;
+        playbackNodesRef.current.forEach((node) => node.stop());
+        playbackNodesRef.current = [];
+        nextPlaybackTimeRef.current = 0;
+        setIsSpeaking(false);
+
         mediaRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         if (cancelled) return;
 
         audioCtxRef.current = new AudioContext();
-        serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current.sampleRate;
+        serverSampleRateRef.current = configuredOutputSampleRate ?? 16000;
 
         const ticket = await createSessionTicket();
         if (cancelled) return;
@@ -278,12 +310,14 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         const ws = new WebSocket(socketUrl);
         ws.binaryType = "arraybuffer";
         wsRef.current = ws;
+        activeSocketRef.current = ws;
 
         ws.onopen = () => {
           setError("");
         };
 
         ws.onmessage = async (event) => {
+          if (epoch !== streamEpochRef.current || ws !== activeSocketRef.current) return;
           if (typeof event.data === "string") {
             try {
               const parsed = JSON.parse(event.data) as BodhiSocketMessage;
@@ -306,6 +340,11 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         };
 
         ws.onerror = () => setError("Bodhi socket error.");
+        ws.onclose = () => {
+          if (activeSocketRef.current === ws) {
+            activeSocketRef.current = null;
+          }
+        };
       } catch (startError) {
         setError(startError instanceof Error ? startError.message : "Failed to initialize Bodhi agent.");
       }
@@ -326,6 +365,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
       playbackNodesRef.current = [];
       wsRef.current?.close();
       wsRef.current = null;
+      activeSocketRef.current = null;
 
       void audioCtxRef.current?.close();
       audioCtxRef.current = null;
