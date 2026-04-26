@@ -84,11 +84,34 @@ const toReasoningState = (
           : "low"
 });
 
+const selectTalkPrompt = (urgencyLevel: number, hasOxygenDrop: boolean, turn: number): string => {
+  const prompts = hasOxygenDrop
+    ? [
+        "Patient is not responding. What should I do first?",
+        "Oxygen is dropping on the left monitor. What is my immediate next step?",
+        "I controlled bleeding. What do you want me to do in the next ten seconds?"
+      ]
+    : urgencyLevel >= 3
+      ? [
+          "Patient is not responding. What should I do first?",
+          "I need short commands. What do I prioritize right now?",
+          "I can only do one thing first. What is it?"
+        ]
+      : [
+          "Patient is not responding. What should I do first?",
+          "What is my next priority after airway check?",
+          "Give me the immediate next action."
+        ];
+
+  return prompts[turn % prompts.length];
+};
+
 function App() {
   const [state, dispatch] = useReducer(clarityReducer, initialState);
   const [bodhiStatusLabel, setBodhiStatusLabel] = useState<string>(
     bodhiAgentAdapter.getSourceLabel()
   );
+  const [talkTurn, setTalkTurn] = useState<number>(0);
   const renderDeployment =
     (import.meta.env.VITE_RENDER_DEPLOYMENT as string | undefined) === "true";
   const spatialAvatar = spatialRealAdapter.getAvatarConfig();
@@ -120,7 +143,10 @@ function App() {
     [state.agentStatus, bodhiStatusLabel]
   );
 
-  const runTalkSequence = (guidance: { text: string; confidence: number }): void => {
+  const runTalkSequence = (
+    userSpeech: string,
+    guidance: { text: string; confidence: number }
+  ): void => {
     dispatch({ type: "SET_MODE", payload: "listening" });
     window.setTimeout(() => {
       dispatch({ type: "SET_MODE", payload: "reasoning" });
@@ -128,7 +154,7 @@ function App() {
         dispatch({
           type: "TALK",
           payload: {
-            userSpeech: "Patient is not responding. What should I do first?",
+            userSpeech,
             response: guidance
           }
         });
@@ -167,13 +193,21 @@ function App() {
   };
 
   const onTalk = async (): Promise<void> => {
+    const hasOxygenDrop = state.sceneEvents.some(
+      (eventItem) =>
+        eventItem.type === "monitor" &&
+        eventItem.label.toLowerCase().includes("oxygen")
+    );
+    const userSpeech = selectTalkPrompt(state.urgencyLevel, hasOxygenDrop, talkTurn);
+
     const guidance = await bodhiAgentAdapter.getPrioritizedAction({
-      userInput: "Patient is not responding. What should I do first?",
+      userInput: userSpeech,
       sceneContext: sceneSummary,
       urgencyLevel: state.urgencyLevel
     });
     setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
-    runTalkSequence(guidance);
+    setTalkTurn((prev) => prev + 1);
+    runTalkSequence(userSpeech, guidance);
   };
 
   const onInterrupt = async (): Promise<void> => {
@@ -214,6 +248,7 @@ function App() {
 
   const onReset = (): void => {
     dispatch({ type: "RESET" });
+    setTalkTurn(0);
   };
 
   return (
