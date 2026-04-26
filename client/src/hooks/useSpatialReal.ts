@@ -18,6 +18,7 @@ export function useSpatialReal() {
 
   const avatarViewRef = useRef<AvatarView | null>(null);
   const connectingRef = useRef(false);
+  const lastVisemeAtRef = useRef(0);
 
   const config = useMemo(
     () => ({
@@ -126,6 +127,22 @@ export function useSpatialReal() {
     }
     const avg = pcm.length > 0 ? sum / pcm.length : 0;
     const mouthAmount = Math.min(1, Math.max(0, (avg - 0.01) * 12));
+
+    const controller = view.controller as unknown as {
+      syncLips?: (input: string) => void;
+      setTextViseme?: (input: string) => void;
+    };
+    const now = Date.now();
+    if (now - lastVisemeAtRef.current >= 80) {
+      const visemeToken = mouthAmount > 0.18 ? "ah" : mouthAmount > 0.08 ? "oh" : "m";
+      if (controller.syncLips) {
+        controller.syncLips(visemeToken);
+      } else if (controller.setTextViseme) {
+        controller.setTextViseme(visemeToken);
+      }
+      lastVisemeAtRef.current = now;
+    }
+
     setExpression({
       mouth_open: mouthAmount,
       viseme_strength: mouthAmount,
