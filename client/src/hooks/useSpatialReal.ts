@@ -61,16 +61,24 @@ export function useSpatialReal() {
       }
 
       const view = avatarViewRef.current;
-      view.controller.onConnectionState = (state: string) => {
+      const controller = view.controller as unknown as {
+        onConnectionState?: (state: string) => void;
+        onConversationState?: (state: string) => void;
+        initializeAudioContext: () => Promise<void>;
+        start: () => Promise<void>;
+        setVolume?: (value: number) => void;
+      };
+      controller.onConnectionState = (state: string) => {
         setAvatarReady(state === "connected");
       };
-      view.controller.onConversationState = (state: string) => {
-        console.log("SR conversation state:", state);
+      controller.onConversationState = (state: string) => {
+        controller.setVolume?.(0);
+        console.log("SR state:", state);
       };
 
-      await view.controller.initializeAudioContext();
-      await view.controller.start();
-      (view.controller as unknown as { volume?: number }).volume = 0;
+      await controller.initializeAudioContext();
+      await controller.start();
+      controller.setVolume?.(0);
       console.log("SpatialReal controller keys:", Object.getOwnPropertyNames(Object.getPrototypeOf(view.controller)));
       console.log("SpatialReal controller own:", Object.keys(view.controller));
 
