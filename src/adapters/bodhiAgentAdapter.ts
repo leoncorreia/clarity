@@ -7,7 +7,7 @@ interface BodhiDecision {
   confidence: number;
 }
 
-type BodhiSource = "mock" | "live";
+type BodhiSource = "live" | "error" | "unconfigured";
 
 export interface BodhiDecisionInput {
   userInput: string;
@@ -21,7 +21,7 @@ const bodhiApiKey = import.meta.env.VITE_BODHI_API_KEY as string | undefined;
 const bodhiBaseUrl = import.meta.env.VITE_BODHI_BASE_URL as string | undefined;
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || undefined;
 
-let lastSource: BodhiSource = "mock";
+let lastSource: BodhiSource = "unconfigured";
 
 const isValidPriority = (
   value: string | undefined
@@ -49,30 +49,6 @@ const isValidDecision = (value: unknown): value is BodhiDecision => {
 const normalizeConfidence = (confidence: number): number =>
   Math.max(0, Math.min(1, confidence));
 
-const mockGuidanceForUrgency = (urgencyLevel: number): AdapterGuidance => {
-  if (urgencyLevel >= 4) {
-    return {
-      text: "Airway first. Pressure on bleed now. Prepare assisted breathing.",
-      confidence: 0.97
-    };
-  }
-
-  return {
-    text: "Open airway, check pulse, then control bleeding with direct pressure.",
-    confidence: 0.95
-  };
-};
-
-const mockInterruptionGuidance = (): AdapterGuidance => ({
-  text: "Understood. Control the bleeding now. Apply direct pressure while maintaining airway awareness.",
-  confidence: 0.98
-});
-
-const mockVisualEventGuidance = (): AdapterGuidance => ({
-  text: "The left monitor shows oxygen dropping. Recheck airway and prepare assisted breathing.",
-  confidence: 0.96
-});
-
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     window.setTimeout(() => reject(new Error("Bodhi timeout")), timeoutMs);
@@ -85,12 +61,14 @@ const requestBodhiDecision = async (
   input: BodhiDecisionInput
 ): Promise<BodhiDecision | null> => {
   if (!useRealBodhi) {
-    return null;
+    lastSource = "unconfigured";
+    throw new Error("VITE_USE_REAL_BODHI must be true for live decisions.");
   }
 
   const isProxyMode = Boolean(apiBaseUrl);
   if (!isProxyMode && (!bodhiBaseUrl || !bodhiApiKey)) {
-    return null;
+    lastSource = "unconfigured";
+    throw new Error("Missing Bodhi credentials for direct live mode.");
   }
 
   const endpoint = isProxyMode
@@ -118,53 +96,44 @@ const requestBodhiDecision = async (
 
   const payload = (await response.json()) as unknown;
   if (!isValidDecision(payload)) {
-    return null;
+    throw new Error("Invalid Bodhi decision payload.");
   }
 
   return payload;
 };
 
 const resolveGuidance = async (
-  input: BodhiDecisionInput,
-  fallback: AdapterGuidance
+  input: BodhiDecisionInput
 ): Promise<AdapterGuidance> => {
-  if (!useRealBodhi) {
-    lastSource = "mock";
-    return fallback;
+  const decision = await requestBodhiDecision(input);
+  if (!decision) {
+    lastSource = "error";
+    throw new Error("No live decision returned from Bodhi.");
   }
 
-  try {
-    const decision = await requestBodhiDecision(input);
-    if (!decision) {
-      lastSource = "mock";
-      return fallback;
-    }
-
-    lastSource = "live";
-    return {
-      text: decision.response,
-      confidence: normalizeConfidence(decision.confidence)
-    };
-  } catch {
-    lastSource = "mock";
-    return fallback;
-  }
+  lastSource = "live";
+  return {
+    text: decision.response,
+    confidence: normalizeConfidence(decision.confidence)
+  };
 };
 
 export const bodhiAgentAdapter = {
   getSourceLabel(): string {
-    return lastSource === "live" ? "Bodhi live active" : "Bodhi fallback active";
+    if (lastSource === "live") return "Bodhi live active";
+    if (lastSource === "unconfigured") return "Bodhi not configured";
+    return "Bodhi error";
   },
 
   async getPrioritizedAction(input: BodhiDecisionInput): Promise<AdapterGuidance> {
-    return resolveGuidance(input, mockGuidanceForUrgency(input.urgencyLevel));
+    return resolveGuidance(input);
   },
 
   async handleInterruption(input: BodhiDecisionInput): Promise<AdapterGuidance> {
-    return resolveGuidance(input, mockInterruptionGuidance());
+    return resolveGuidance(input);
   },
 
   async reactToVisualEvent(input: BodhiDecisionInput): Promise<AdapterGuidance> {
-    return resolveGuidance(input, mockVisualEventGuidance());
+    return resolveGuidance(input);
   }
 };

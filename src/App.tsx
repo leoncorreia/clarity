@@ -6,7 +6,6 @@ import {
   type TranscriptEntry,
   type SceneEvent
 } from "./state/clarityStateMachine";
-import { oxygenDropEvent } from "./data/scenarios";
 import { bodhiAgentAdapter } from "./adapters/bodhiAgentAdapter";
 import { phyAgentOSAdapter } from "./adapters/phyAgentOSAdapter";
 import { spatialRealAdapter } from "./adapters/spatialRealAdapter";
@@ -84,34 +83,30 @@ const toReasoningState = (
           : "low"
 });
 
-const selectTalkPrompt = (urgencyLevel: number, hasOxygenDrop: boolean, turn: number): string => {
-  const prompts = hasOxygenDrop
-    ? [
-        "Patient is not responding. What should I do first?",
-        "Oxygen is dropping on the left monitor. What is my immediate next step?",
-        "I controlled bleeding. What do you want me to do in the next ten seconds?"
-      ]
-    : urgencyLevel >= 3
-      ? [
-          "Patient is not responding. What should I do first?",
-          "I need short commands. What do I prioritize right now?",
-          "I can only do one thing first. What is it?"
-        ]
-      : [
-          "Patient is not responding. What should I do first?",
-          "What is my next priority after airway check?",
-          "Give me the immediate next action."
-        ];
-
-  return prompts[turn % prompts.length];
-};
+const createLiveSceneEvent = (text: string): SceneEvent => ({
+  id: `live-${Date.now()}`,
+  label: text,
+  type: text.toLowerCase().includes("monitor") || text.toLowerCase().includes("oxygen") ? "monitor" : "risk",
+  zone: text.toLowerCase().includes("left")
+    ? "left"
+    : text.toLowerCase().includes("right")
+      ? "right"
+      : "center",
+  severity: text.toLowerCase().includes("critical") || text.toLowerCase().includes("heavy")
+    ? "critical"
+    : text.toLowerCase().includes("high")
+      ? "high"
+      : "medium"
+});
 
 function App() {
   const [state, dispatch] = useReducer(clarityReducer, initialState);
   const [bodhiStatusLabel, setBodhiStatusLabel] = useState<string>(
     bodhiAgentAdapter.getSourceLabel()
   );
-  const [talkTurn, setTalkTurn] = useState<number>(0);
+  const [operatorInput, setOperatorInput] = useState<string>("");
+  const [sceneEventInput, setSceneEventInput] = useState<string>("");
+  const [runtimeError, setRuntimeError] = useState<string>("");
   const renderDeployment =
     (import.meta.env.VITE_RENDER_DEPLOYMENT as string | undefined) === "true";
   const spatialAvatar = spatialRealAdapter.getAvatarConfig();
@@ -173,12 +168,14 @@ function App() {
           ? `${snapshot.observedContext} (PhyAgentOS workspace feed)`
           : snapshot.source === "live"
             ? `${snapshot.observedContext} (PhyAgentOS live feed)`
-            : `${snapshot.observedContext} (PhyAgentOS mock fallback)`;
+            : snapshot.observedContext;
       sceneEvents = snapshot.events;
-    } catch {
-      const fallback = await phyAgentOSAdapter.getSceneSnapshot();
-      observedContext = `${fallback.observedContext} (PhyAgentOS fallback after feed error)`;
-      sceneEvents = fallback.events;
+      setRuntimeError("");
+    } catch (error) {
+      observedContext =
+        "Live scene feed unavailable. Enter operator observations manually to continue.";
+      sceneEvents = [];
+      setRuntimeError(error instanceof Error ? error.message : "Unable to connect live scene feed.");
     }
 
     dispatch({
@@ -186,60 +183,91 @@ function App() {
       payload: {
         sceneEvents,
         openingResponse:
-          "I see an unconscious patient and a possible airway risk. Check airway and pulse first.",
+          "Live session engaged. Awaiting operator input.",
         observedContext
       }
     });
   };
 
   const onTalk = async (): Promise<void> => {
-    const hasOxygenDrop = state.sceneEvents.some(
-      (eventItem) =>
-        eventItem.type === "monitor" &&
-        eventItem.label.toLowerCase().includes("oxygen")
-    );
-    const userSpeech = selectTalkPrompt(state.urgencyLevel, hasOxygenDrop, talkTurn);
+    const trimmedInput = operatorInput.trim();
+    if (!trimmedInput) {
+      setRuntimeError("Enter a live operator prompt before using Talk.");
+      return;
+    }
 
-    const guidance = await bodhiAgentAdapter.getPrioritizedAction({
-      userInput: userSpeech,
-      sceneContext: sceneSummary,
-      urgencyLevel: state.urgencyLevel
-    });
-    setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
-    setTalkTurn((prev) => prev + 1);
-    runTalkSequence(userSpeech, guidance);
+    const userSpeech = trimmedInput;
+
+    try {
+      const guidance = await bodhiAgentAdapter.getPrioritizedAction({
+        userInput: userSpeech,
+        sceneContext: sceneSummary,
+        urgencyLevel: state.urgencyLevel
+      });
+      setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
+      setRuntimeError("");
+      runTalkSequence(userSpeech, guidance);
+    } catch (error) {
+      setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
+      setRuntimeError(error instanceof Error ? error.message : "Bodhi live call failed.");
+    }
   };
 
   const onInterrupt = async (): Promise<void> => {
-    const response = await bodhiAgentAdapter.handleInterruption({
-      userInput: "Wait, there is heavy bleeding from the leg.",
-      sceneContext: sceneSummary,
-      urgencyLevel: Math.min(4, state.urgencyLevel + 1)
-    });
-    setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
-    dispatch({
-      type: "INTERRUPT",
-      payload: {
-        userSpeech: "Wait, there is heavy bleeding from the leg.",
-        response
-      }
-    });
+    const userInput = operatorInput.trim();
+    if (!userInput) {
+      setRuntimeError("Enter interruption text from the operator first.");
+      return;
+    }
+
+    try {
+      const response = await bodhiAgentAdapter.handleInterruption({
+        userInput,
+        sceneContext: sceneSummary,
+        urgencyLevel: Math.min(4, state.urgencyLevel + 1)
+      });
+      setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
+      setRuntimeError("");
+      dispatch({
+        type: "INTERRUPT",
+        payload: {
+          userSpeech: userInput,
+          response
+        }
+      });
+    } catch (error) {
+      setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
+      setRuntimeError(error instanceof Error ? error.message : "Bodhi interruption call failed.");
+    }
   };
 
   const onAddVisualEvent = async (): Promise<void> => {
-    const response = await bodhiAgentAdapter.reactToVisualEvent({
-      userInput: "Left monitor shows oxygen dropping.",
-      sceneContext: sceneSummary,
-      urgencyLevel: state.urgencyLevel
-    });
-    setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
-    dispatch({
-      type: "ADD_VISUAL_EVENT",
-      payload: {
-        event: oxygenDropEvent,
-        response
-      }
-    });
+    const eventText = sceneEventInput.trim();
+    if (!eventText) {
+      setRuntimeError("Enter a live scene event before adding visual event.");
+      return;
+    }
+
+    try {
+      const response = await bodhiAgentAdapter.reactToVisualEvent({
+        userInput: eventText,
+        sceneContext: sceneSummary,
+        urgencyLevel: state.urgencyLevel
+      });
+      setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
+      setRuntimeError("");
+      dispatch({
+        type: "ADD_VISUAL_EVENT",
+        payload: {
+          event: createLiveSceneEvent(eventText),
+          response
+        }
+      });
+      setSceneEventInput("");
+    } catch (error) {
+      setBodhiStatusLabel(bodhiAgentAdapter.getSourceLabel());
+      setRuntimeError(error instanceof Error ? error.message : "Bodhi visual-event call failed.");
+    }
   };
 
   const onEscalateUrgency = (): void => {
@@ -248,7 +276,9 @@ function App() {
 
   const onReset = (): void => {
     dispatch({ type: "RESET" });
-    setTalkTurn(0);
+    setRuntimeError("");
+    setOperatorInput("");
+    setSceneEventInput("");
   };
 
   return (
@@ -318,6 +348,25 @@ function App() {
           <p className="mono text-[0.65rem] text-muted-foreground mt-1">
             SpatialReal avatar: {spatialAvatar.avatarId}
           </p>
+          <div className="mt-3 grid gap-2">
+            <label className="mono text-[0.65rem] text-muted-foreground">Operator input</label>
+            <input
+              value={operatorInput}
+              onChange={(event) => setOperatorInput(event.target.value)}
+              placeholder="Type live responder speech..."
+              className="w-full rounded-md border border-border bg-[oklch(0.22_0.02_240)] px-2 py-1 text-xs"
+            />
+            <label className="mono text-[0.65rem] text-muted-foreground">Scene event input</label>
+            <input
+              value={sceneEventInput}
+              onChange={(event) => setSceneEventInput(event.target.value)}
+              placeholder="Example: Left monitor oxygen dropping rapidly"
+              className="w-full rounded-md border border-border bg-[oklch(0.22_0.02_240)] px-2 py-1 text-xs"
+            />
+            {runtimeError ? (
+              <p className="text-[0.7rem] text-critical mt-1">{runtimeError}</p>
+            ) : null}
+          </div>
         </div>
       </main>
     </div>

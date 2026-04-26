@@ -1,7 +1,6 @@
 import type { SceneEvent } from "../state/clarityStateMachine";
-import { baseSceneEvents, openingObservation } from "../data/scenarios";
 
-type AdapterMode = "mock" | "workspace" | "live" | "hybrid";
+type AdapterMode = "workspace" | "live" | "hybrid";
 
 interface RawPhyAgentEvent {
   id?: string;
@@ -17,7 +16,7 @@ interface RawPhyAgentSnapshot {
 }
 
 export interface PhyAgentSceneSnapshot {
-  source: "mock" | "workspace" | "live";
+  source: "workspace" | "live";
   observedContext: string;
   events: SceneEvent[];
 }
@@ -27,7 +26,7 @@ const workspaceEndpoint = import.meta.env.VITE_PHYAGENT_WORKSPACE_ENDPOINT as
   | undefined;
 const endpoint = import.meta.env.VITE_PHYAGENT_ENDPOINT as string | undefined;
 const apiKey = import.meta.env.VITE_PHYAGENT_API_KEY as string | undefined;
-const mode = (import.meta.env.VITE_PHYAGENT_MODE as AdapterMode | undefined) ?? "mock";
+const mode = (import.meta.env.VITE_PHYAGENT_MODE as AdapterMode | undefined) ?? "live";
 
 const isType = (value: string | undefined): value is SceneEvent["type"] =>
   value === "patient" ||
@@ -55,12 +54,6 @@ const toSceneEvent = (eventItem: RawPhyAgentEvent, index: number): SceneEvent | 
     severity: eventItem.severity
   };
 };
-
-const getMockSnapshot = (): PhyAgentSceneSnapshot => ({
-  source: "mock",
-  observedContext: openingObservation,
-  events: baseSceneEvents
-});
 
 const fetchSnapshot = async (
   requestEndpoint: string | undefined,
@@ -118,10 +111,6 @@ export const phyAgentOSAdapter = {
   },
 
   async getSceneSnapshot(): Promise<PhyAgentSceneSnapshot> {
-    if (mode === "mock") {
-      return getMockSnapshot();
-    }
-
     const attempts: Array<() => Promise<PhyAgentSceneSnapshot | null>> =
       mode === "workspace"
         ? [() => fetchSnapshot(workspaceEndpoint, "workspace")]
@@ -145,7 +134,7 @@ export const phyAgentOSAdapter = {
       }
     }
 
-    return getMockSnapshot();
+    throw new Error("No live PhyAgentOS scene feed available.");
   },
 
   summarizeContext(events: SceneEvent[]): string {
