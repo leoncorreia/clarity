@@ -98,6 +98,7 @@ function App() {
 
   useEffect(() => {
     if (!avatarReady) return;
+    if (bodhi.isSpeaking) return;
 
     const emotion = dominantEmotion.toLowerCase();
     if (emotion.includes("fear") || emotion.includes("distress")) {
@@ -111,7 +112,7 @@ function App() {
     if (hrBpm && hrBpm > 100) {
       setExpression({ voice_mode: "lower", gesture: "hand_on_chest" });
     }
-  }, [avatarReady, dominantEmotion, hrBpm, setExpression]);
+  }, [avatarReady, bodhi.isSpeaking, dominantEmotion, hrBpm, setExpression]);
 
   useEffect(() => {
     if (!bodhi.agentText) return;
@@ -133,8 +134,8 @@ function App() {
   }, [bodhi, dominantEmotion, hrBpm, sessionStartedAt]);
 
   useEffect(() => {
-    bodhi.setMicEnabled(inputMode === "mic");
-  }, [inputMode]);
+    bodhi.setMicEnabled(inputMode === "mic" && !bodhi.isSpeaking);
+  }, [bodhi, inputMode]);
 
   const beginSession = async () => {
     try {

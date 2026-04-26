@@ -138,7 +138,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
 
     const playPcmChunk = (buffer: ArrayBuffer) => {
       if (!audioCtxRef.current) return;
-      const sourceRate = serverSampleRateRef.current || configuredOutputSampleRate || 16000;
+      const sourceRate = serverSampleRateRef.current || configuredOutputSampleRate || audioCtxRef.current.sampleRate || 48000;
       const targetRate = audioCtxRef.current.sampleRate || 48000;
       const float = pcm16ToFloat32(buffer);
       const resampled = resampleFloat32(float, sourceRate, targetRate);
@@ -212,7 +212,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         ) {
           serverSampleRateRef.current = sampleRateCandidate;
         } else {
-          serverSampleRateRef.current = configuredOutputSampleRate ?? 16000;
+          serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current?.sampleRate ?? 48000;
         }
         return;
       }
@@ -301,7 +301,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
         if (cancelled) return;
 
         audioCtxRef.current = new AudioContext();
-        serverSampleRateRef.current = configuredOutputSampleRate ?? 16000;
+        serverSampleRateRef.current = configuredOutputSampleRate ?? audioCtxRef.current.sampleRate;
 
         const ticket = await createSessionTicket();
         if (cancelled) return;
