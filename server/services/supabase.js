@@ -4,22 +4,31 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+let warnedMissingSupabase = false;
 
 function ensureClient() {
   if (!supabase) {
-    throw new Error("Supabase service client is not configured.");
+    if (!warnedMissingSupabase) {
+      warnedMissingSupabase = true;
+      console.warn("Supabase not configured; running without persistence.");
+    }
+    return null;
   }
   return supabase;
 }
 
 export async function upsertSession(payload) {
   const client = ensureClient();
+  if (!client) return;
   const { error } = await client.from("sessions").upsert(payload);
-  if (error) throw error;
+  if (error) {
+    console.warn("Supabase upsertSession failed:", error.message);
+  }
 }
 
 export async function closeSession(sessionId, summaryText) {
   const client = ensureClient();
+  if (!client) return;
   const endedAt = new Date().toISOString();
   const started = await client
     .from("sessions")
@@ -35,11 +44,14 @@ export async function closeSession(sessionId, summaryText) {
     .update({ ended_at: endedAt, duration_seconds: durationSeconds, summary_text: summaryText })
     .eq("id", sessionId);
 
-  if (error) throw error;
+  if (error) {
+    console.warn("Supabase closeSession failed:", error.message);
+  }
 }
 
 export async function insertAffectBatch(sessionId, batch) {
   const client = ensureClient();
+  if (!client) return;
   const records = batch.map((item) => ({
     session_id: sessionId,
     timestamp: item.timestamp,
@@ -47,11 +59,16 @@ export async function insertAffectBatch(sessionId, batch) {
     scores: item.scores
   }));
   const { error } = await client.from("affect_log").insert(records);
-  if (error) throw error;
+  if (error) {
+    console.warn("Supabase insertAffectBatch failed:", error.message);
+  }
 }
 
 export async function insertActionLog(record) {
   const client = ensureClient();
+  if (!client) return;
   const { error } = await client.from("action_log").insert(record);
-  if (error) throw error;
+  if (error) {
+    console.warn("Supabase insertActionLog failed:", error.message);
+  }
 }
