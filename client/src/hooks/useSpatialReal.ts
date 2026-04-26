@@ -93,17 +93,17 @@ export function useSpatialReal() {
     if (!view || !text.trim()) return;
 
     const controller = view.controller as unknown as {
-      speakText?: (input: string) => Promise<void>;
       syncLips?: (input: string) => void;
+      setTextViseme?: (input: string) => void;
     };
-
-    if (controller.speakText) {
-      await controller.speakText(text);
-      return;
-    }
 
     if (controller.syncLips) {
       controller.syncLips(text);
+      return;
+    }
+
+    if (controller.setTextViseme) {
+      controller.setTextViseme(text);
     }
   }, []);
 
@@ -111,19 +111,18 @@ export function useSpatialReal() {
     const view = avatarViewRef.current;
     if (!view || pcmChunk.byteLength === 0) return;
 
-    const controller = view.controller as unknown as {
-      send?: (audio: ArrayBuffer, endOfStream?: boolean) => void;
-      pushAudio?: (audio: ArrayBuffer) => void;
-    };
-
-    if (controller.send) {
-      controller.send(pcmChunk, isFinal);
-      return;
+    const pcm = new Int16Array(pcmChunk);
+    let sum = 0;
+    for (let i = 0; i < pcm.length; i += 1) {
+      sum += Math.abs(pcm[i] / 32768);
     }
-
-    if (controller.pushAudio) {
-      controller.pushAudio(pcmChunk);
-    }
+    const avg = pcm.length > 0 ? sum / pcm.length : 0;
+    const mouthAmount = Math.min(1, avg * 4);
+    setExpression({
+      mouth_open: mouthAmount,
+      viseme_strength: mouthAmount,
+      talking: mouthAmount > 0.02
+    });
   }, []);
 
   const disconnect = useCallback(() => {

@@ -32,6 +32,8 @@ interface BodhiSocketMessage {
   transcript?: string;
   payload?: { text?: string; final?: boolean };
   sampleRate?: number;
+  outputSampleRate?: number;
+  audio?: { sampleRate?: number };
   sessionId?: string;
 }
 
@@ -168,8 +170,19 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk }: Use
       const type = message.type?.toLowerCase() ?? "";
 
       if (type === "session.config" || type === "session_config") {
-        if (typeof message.sampleRate === "number" && Number.isFinite(message.sampleRate)) {
-          serverSampleRateRef.current = message.sampleRate;
+        const sampleRateCandidate =
+          message.sampleRate ??
+          message.outputSampleRate ??
+          message.audio?.sampleRate ??
+          (typeof message.payload === "object" && message.payload !== null
+            ? (message.payload as { sampleRate?: number; outputSampleRate?: number }).sampleRate ??
+              (message.payload as { sampleRate?: number; outputSampleRate?: number }).outputSampleRate
+            : undefined);
+
+        if (typeof sampleRateCandidate === "number" && Number.isFinite(sampleRateCandidate)) {
+          serverSampleRateRef.current = sampleRateCandidate;
+        } else {
+          serverSampleRateRef.current = 16000;
         }
         return;
       }

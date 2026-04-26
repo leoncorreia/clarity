@@ -4,5 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import { avatarkitVitePlugin } from "@spatialwalk/avatarkit/vite";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), avatarkitVitePlugin()]
+  plugins: [react(), tailwindcss(), avatarkitVitePlugin()],
+  build: {
+    chunkSizeWarningLimit: 1400
+  }
 });
