@@ -68,3 +68,13 @@ create table biometric_log (
 ```
 
 Disable RLS for v1.
+
+## SpatialReal SDK mode notes
+
+This project uses SpatialReal AvatarKit package integration (`@spatialwalk/avatarkit`) with:
+
+- `VITE_SPATIALREAL_APP_ID`
+- `VITE_SPATIALREAL_AVATAR_ID`
+- `VITE_SPATIALREAL_SESSION_TOKEN`
+
+No separate browser SDK URL is required for this flow.

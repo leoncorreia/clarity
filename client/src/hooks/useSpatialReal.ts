@@ -1,51 +1,60 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import {
+  AvatarManager,
+  AvatarSDK,
+  AvatarView,
+  DrivingServiceMode,
+  Environment
+} from "@spatialwalk/avatarkit";
 
-interface SpatialAvatarApi {
-  mount: (target: HTMLElement, options: { apiKey: string; avatarId: string }) => Promise<void>;
-  setExpression: (payload: Record<string, number | string | boolean>) => void;
-  syncLips: (text: string) => void;
-  destroy: () => void;
-}
-
-interface SpatialWindow {
-  SpatialReal?: {
-    createSession: () => SpatialAvatarApi;
-  };
+interface ExpressionPayload {
+  [key: string]: number | string | boolean;
 }
 
 export function useSpatialReal() {
   const [avatarReady, setAvatarReady] = useState(false);
   const [error, setError] = useState("");
 
+  const avatarViewRef = useRef<AvatarView | null>(null);
+
   const config = useMemo(
     () => ({
-      apiKey: import.meta.env.VITE_SPATIALREAL_API_KEY as string | undefined,
-      avatarId: import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined
+      appId: import.meta.env.VITE_SPATIALREAL_APP_ID as string | undefined,
+      avatarId: import.meta.env.VITE_SPATIALREAL_AVATAR_ID as string | undefined,
+      sessionToken: import.meta.env.VITE_SPATIALREAL_SESSION_TOKEN as string | undefined
     }),
     []
   );
 
-  const sessionRef = useState<SpatialAvatarApi | null>(null)[0];
-
   const connect = async (target: HTMLElement) => {
-    if (!config.apiKey || !config.avatarId) {
-      setError("Missing SpatialReal credentials.");
-      return;
-    }
-
-    const spatial = (window as unknown as SpatialWindow).SpatialReal;
-    if (!spatial?.createSession) {
-      setError("SpatialReal SDK not loaded on window.");
+    if (!config.appId || !config.avatarId || !config.sessionToken) {
+      setError("Missing SpatialReal app ID, avatar ID, or session token.");
       return;
     }
 
     try {
-      const nextSession = spatial.createSession();
-      await nextSession.mount(target, {
-        apiKey: config.apiKey,
-        avatarId: config.avatarId
-      });
-      (sessionRef as unknown as { current?: SpatialAvatarApi }).current = nextSession;
+      if (!AvatarSDK.isInitialized) {
+        await AvatarSDK.initialize(config.appId, {
+          environment: Environment.intl,
+          drivingServiceMode: DrivingServiceMode.sdk
+        });
+      }
+
+      AvatarSDK.setSessionToken(config.sessionToken);
+
+      if (!avatarViewRef.current) {
+        const avatar = await AvatarManager.shared.load(config.avatarId);
+        avatarViewRef.current = new AvatarView(avatar, target);
+      }
+
+      const view = avatarViewRef.current;
+      view.controller.onConnectionState = (state: string) => {
+        setAvatarReady(state === "connected");
+      };
+
+      await view.controller.initializeAudioContext();
+      await view.controller.start();
+
       setAvatarReady(true);
       setError("");
     } catch (connectError) {
@@ -53,17 +62,48 @@ export function useSpatialReal() {
     }
   };
 
-  const setExpression = (payload: Record<string, number | string | boolean>) => {
-    (sessionRef as unknown as { current?: SpatialAvatarApi }).current?.setExpression(payload);
+  const setExpression = (payload: ExpressionPayload) => {
+    const view = avatarViewRef.current;
+    if (!view) return;
+
+    const controller = view.controller as unknown as {
+      setExpression?: (value: ExpressionPayload) => void;
+      applyExpression?: (value: ExpressionPayload) => void;
+    };
+
+    if (controller.setExpression) {
+      controller.setExpression(payload);
+      return;
+    }
+
+    if (controller.applyExpression) {
+      controller.applyExpression(payload);
+    }
   };
 
-  const syncLips = (text: string) => {
-    (sessionRef as unknown as { current?: SpatialAvatarApi }).current?.syncLips(text);
+  const syncLips = async (text: string) => {
+    const view = avatarViewRef.current;
+    if (!view || !text.trim()) return;
+
+    const controller = view.controller as unknown as {
+      speakText?: (input: string) => Promise<void>;
+      syncLips?: (input: string) => void;
+    };
+
+    if (controller.speakText) {
+      await controller.speakText(text);
+      return;
+    }
+
+    if (controller.syncLips) {
+      controller.syncLips(text);
+    }
   };
 
   const disconnect = () => {
-    (sessionRef as unknown as { current?: SpatialAvatarApi }).current?.destroy();
-    (sessionRef as unknown as { current?: SpatialAvatarApi }).current = undefined;
+    avatarViewRef.current?.controller.close();
+    avatarViewRef.current?.dispose();
+    avatarViewRef.current = null;
     setAvatarReady(false);
   };
 
