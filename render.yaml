@@ -13,8 +13,9 @@ services:
       - key: BODHI_API_KEY
         sync: false
 
-  - type: static_site
+  - type: web
     name: clarity-frontend
+    runtime: static
     rootDir: .
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
