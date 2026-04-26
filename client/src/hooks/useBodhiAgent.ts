@@ -75,11 +75,16 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
   const sessionIdRef = useRef<string>("");
   const readyRef = useRef(false);
   const micEnabledRef = useRef(true);
+  const onFinalTranscriptRef = useRef(onFinalTranscript);
 
   const apiBaseUrl = useMemo(
     () => (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, ""),
     []
   );
+
+  useEffect(() => {
+    onFinalTranscriptRef.current = onFinalTranscript;
+  }, [onFinalTranscript]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -174,7 +179,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
         const final = Boolean(message.final || message.payload?.final);
         setTranscript(text);
         if (final) {
-          onFinalTranscript(text);
+          onFinalTranscriptRef.current(text);
         }
         return;
       }
@@ -288,7 +293,7 @@ export function useBodhiAgent({ enabled, onFinalTranscript }: UseBodhiAgentArgs)
       void closeRemoteSession();
       sessionIdRef.current = "";
     };
-  }, [apiBaseUrl, enabled, onFinalTranscript]);
+  }, [apiBaseUrl, enabled]);
 
   const interrupt = () => {
     playbackNodesRef.current.forEach((node) => node.stop());

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AvatarCanvas } from "./components/AvatarCanvas";
 import { VoiceOrb } from "./components/VoiceOrb";
 import { ConsentGate } from "./components/ConsentGate";
@@ -20,6 +20,7 @@ function App() {
   const [toasts, setToasts] = useState<ActionToastItem[]>([]);
   const [error, setError] = useState("");
   const [typedInput, setTypedInput] = useState("");
+  const [inputMode, setInputMode] = useState<"mic" | "text">("mic");
   const mountRef = useRef<HTMLDivElement | null>(null);
 
   const { hrBpm, connect: connectBiometrics } = useBiometrics();
@@ -50,9 +51,7 @@ function App() {
     setToasts((prev) => [...prev, { id: crypto.randomUUID(), title, detail }]);
   };
 
-  const bodhi = useBodhiAgent({
-    enabled: consentGranted && Boolean(sessionId),
-    onFinalTranscript: async (text) => {
+  const handleFinalTranscript = useCallback(async (text: string) => {
       const intent = parseIntent(text, distressSustained);
       if (intent.intent === "NONE") return;
       try {
@@ -69,7 +68,11 @@ function App() {
       } catch (dispatchError) {
         setError(dispatchError instanceof Error ? dispatchError.message : "Action dispatch failed.");
       }
-    }
+    }, [distressSustained, dominantEmotion, hrBpm, sessionId]);
+
+  const bodhi = useBodhiAgent({
+    enabled: consentGranted && Boolean(sessionId),
+    onFinalTranscript: handleFinalTranscript
   });
 
   useEffect(() => {
@@ -125,6 +128,10 @@ function App() {
 
     return () => window.clearInterval(timerId);
   }, [bodhi, dominantEmotion, hrBpm, sessionStartedAt]);
+
+  useEffect(() => {
+    bodhi.setMicEnabled(inputMode === "mic");
+  }, [inputMode]);
 
   const beginSession = async () => {
     try {
@@ -184,13 +191,29 @@ function App() {
           <div className="text-slate-300 mt-1">{bodhi.transcript || "Listening for user speech..."}</div>
           <div className="text-cyan-300 mt-2">Agent: {bodhi.agentText || "Awaiting response..."}</div>
           <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setInputMode("mic")}
+              className={`rounded px-2 py-1 text-xs ${inputMode === "mic" ? "bg-blue-700" : "bg-slate-700"}`}
+            >
+              Mic mode
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputMode("text")}
+              className={`rounded px-2 py-1 text-xs ${inputMode === "text" ? "bg-blue-700" : "bg-slate-700"}`}
+            >
+              Text mode
+            </button>
+          </div>
+          <div className="mt-3 flex gap-2">
             <input
               value={typedInput}
               onChange={(event) => setTypedInput(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") sendTypedMessage();
               }}
-              placeholder="Type if microphone fails..."
+              placeholder="Type message to agent..."
               className="flex-1 rounded bg-slate-900/80 border border-slate-600 px-2 py-1 text-xs text-slate-100"
             />
             <button
@@ -199,13 +222,6 @@ function App() {
               className="rounded px-2 py-1 bg-blue-700 text-xs"
             >
               Send
-            </button>
-            <button
-              type="button"
-              onClick={() => bodhi.setMicEnabled(!bodhi.micEnabled)}
-              className="rounded px-2 py-1 bg-slate-700 text-xs"
-            >
-              {bodhi.micEnabled ? "Pause mic" : "Resume mic"}
             </button>
           </div>
           {(error || bodhi.error) ? <div className="mt-2 text-red-300">{error || bodhi.error}</div> : null}
@@ -226,7 +242,11 @@ function App() {
       </div>
 
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
-        <VoiceOrb isListening={bodhi.isListening} isSpeaking={bodhi.isSpeaking} onInterrupt={bodhi.interrupt} />
+        <VoiceOrb
+          isListening={inputMode === "mic" && bodhi.isListening}
+          isSpeaking={bodhi.isSpeaking}
+          onInterrupt={bodhi.interrupt}
+        />
       </div>
     </div>
   );
