@@ -6,20 +6,26 @@ const from = process.env.TWILIO_FROM_NUMBER;
 
 const client = sid && token ? twilio(sid, token) : null;
 
+export function isTwilioConfigured() {
+  return Boolean(client && from);
+}
+
 export async function sendSMS(to, body) {
   if (!client || !from) {
-    throw new Error("Twilio client not configured.");
+    return { skipped: true, reason: "Twilio client not configured." };
   }
   await client.messages.create({ from, to, body });
+  return { skipped: false };
 }
 
 export async function initiateCall(to) {
   if (!client || !from) {
-    throw new Error("Twilio client not configured.");
+    return { skipped: true, reason: "Twilio client not configured." };
   }
   await client.calls.create({
     to,
     from,
     twiml: `<Response><Say voice=\"alice\">This is Crisis Coach connecting you to immediate support.</Say></Response>`
   });
+  return { skipped: false };
 }
