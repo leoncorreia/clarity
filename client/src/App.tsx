@@ -23,6 +23,8 @@ function App() {
   const [inputMode, setInputMode] = useState<"mic" | "text">("mic");
   const [pushToTalkActive, setPushToTalkActive] = useState(false);
   const [selectedAvatarId, setSelectedAvatarId] = useState("");
+  const [textResponseArmed, setTextResponseArmed] = useState(false);
+  const [textResponseStarted, setTextResponseStarted] = useState(false);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const miaImage = new URL("../../src/lovable/Mia.png", import.meta.url).href;
   const kellanImage = new URL("../../src/lovable/kellan.png", import.meta.url).href;
@@ -164,6 +166,39 @@ function App() {
   }, [bodhi, typedInput]);
 
   useEffect(() => {
+    if (inputMode !== "text") {
+      if (textResponseArmed || textResponseStarted) {
+        setTextResponseArmed(false);
+        setTextResponseStarted(false);
+      }
+      return;
+    }
+
+    if (bodhi.isSpeaking && !textResponseArmed) {
+      bodhi.interrupt();
+      return;
+    }
+
+    if (textResponseArmed && bodhi.isSpeaking && !textResponseStarted) {
+      setTextResponseStarted(true);
+    }
+
+    if (textResponseArmed && textResponseStarted && !bodhi.isSpeaking) {
+      setTextResponseArmed(false);
+      setTextResponseStarted(false);
+    }
+  }, [bodhi, inputMode, textResponseArmed, textResponseStarted]);
+
+  useEffect(() => {
+    if (!textResponseArmed) return;
+    const timeoutId = window.setTimeout(() => {
+      setTextResponseArmed(false);
+      setTextResponseStarted(false);
+    }, 12000);
+    return () => window.clearTimeout(timeoutId);
+  }, [textResponseArmed]);
+
+  useEffect(() => {
     if (inputMode === "text" && pushToTalkActive) {
       setPushToTalkActive(false);
     }
@@ -209,6 +244,8 @@ function App() {
   const sendTypedMessage = () => {
     const trimmed = typedInput.trim();
     if (!trimmed) return;
+    setTextResponseArmed(true);
+    setTextResponseStarted(false);
     bodhi.sendText(trimmed);
     setTypedInput("");
   };
