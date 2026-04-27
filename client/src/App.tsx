@@ -174,11 +174,6 @@ function App() {
       return;
     }
 
-    if (bodhi.isSpeaking && !textResponseArmed) {
-      bodhi.interrupt();
-      return;
-    }
-
     if (textResponseArmed && bodhi.isSpeaking && !textResponseStarted) {
       setTextResponseStarted(true);
     }

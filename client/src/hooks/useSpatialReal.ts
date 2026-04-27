@@ -44,7 +44,7 @@ export function useSpatialReal(selectedAvatarId?: string) {
         await AvatarSDK.initialize(config.appId, {
           environment: Environment.intl,
           drivingServiceMode: DrivingServiceMode.sdk,
-          logLevel: LogLevel.all,
+          logLevel: LogLevel.warning,
           audioFormat: {
             channelCount: 1,
             sampleRate: 24000
