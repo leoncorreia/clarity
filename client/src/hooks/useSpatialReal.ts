@@ -19,6 +19,7 @@ export function useSpatialReal(selectedAvatarId?: string) {
   const avatarViewRef = useRef<AvatarView | null>(null);
   const connectingRef = useRef(false);
   const lastVisemeAtRef = useRef(0);
+  const endTimerRef = useRef<number | null>(null);
 
   const config = useMemo(
     () => ({
@@ -131,6 +132,10 @@ export function useSpatialReal(selectedAvatarId?: string) {
   }, []);
 
   const disconnect = useCallback(() => {
+    if (endTimerRef.current !== null) {
+      window.clearTimeout(endTimerRef.current);
+      endTimerRef.current = null;
+    }
     avatarViewRef.current?.controller.close();
     avatarViewRef.current?.dispose();
     avatarViewRef.current = null;
@@ -142,11 +147,22 @@ export function useSpatialReal(selectedAvatarId?: string) {
     const view = avatarViewRef.current;
     if (!view || buffer.byteLength === 0) return;
     (view.controller as unknown as { send?: (audioData: ArrayBuffer, end: boolean) => string }).send?.(buffer, false);
+    if (endTimerRef.current !== null) {
+      window.clearTimeout(endTimerRef.current);
+    }
+    endTimerRef.current = window.setTimeout(() => {
+      (view.controller as unknown as { send?: (audioData: ArrayBuffer, end: boolean) => string }).send?.(new ArrayBuffer(0), true);
+      endTimerRef.current = null;
+    }, 220);
   }, []);
 
   const endAudio = useCallback(() => {
     const view = avatarViewRef.current;
     if (!view) return;
+    if (endTimerRef.current !== null) {
+      window.clearTimeout(endTimerRef.current);
+      endTimerRef.current = null;
+    }
     (view.controller as unknown as { send?: (audioData: ArrayBuffer, end: boolean) => string }).send?.(new ArrayBuffer(0), true);
   }, []);
 

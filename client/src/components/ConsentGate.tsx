@@ -47,7 +47,13 @@ export function ConsentGate({ onAccept, selectedAvatarId, onSelectAvatar, avatar
                   : "border-slate-200 hover:border-slate-300"
               }`}
             >
-              <img src={option.imageSrc} alt={option.name} className="w-full h-48 object-cover rounded-2xl" />
+              <div className="w-full h-48 rounded-2xl bg-slate-100 overflow-hidden flex items-center justify-center">
+                <img
+                  src={option.imageSrc}
+                  alt={option.name}
+                  className="w-full h-full object-contain object-center"
+                />
+              </div>
               <div className="mt-4">
                 <div className="text-xs uppercase tracking-wide text-slate-500">Therapist</div>
                 <div className="mt-1 text-2xl font-semibold text-slate-900">{option.name}</div>
