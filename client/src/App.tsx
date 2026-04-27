@@ -278,13 +278,17 @@ function App() {
             <div className="mt-3">
               <button
                 type="button"
-                onPointerDown={() => {
+                onMouseDown={() => {
                   if (bodhi.isSpeaking) bodhi.interrupt();
                   setPushToTalkActive(true);
                 }}
-                onPointerUp={() => setPushToTalkActive(false)}
-                onPointerCancel={() => setPushToTalkActive(false)}
-                onPointerLeave={() => setPushToTalkActive(false)}
+                onMouseUp={() => setPushToTalkActive(false)}
+                onMouseLeave={() => setPushToTalkActive(false)}
+                onTouchStart={() => {
+                  if (bodhi.isSpeaking) bodhi.interrupt();
+                  setPushToTalkActive(true);
+                }}
+                onTouchEnd={() => setPushToTalkActive(false)}
                 className={`rounded px-3 py-2 text-xs ${
                   pushToTalkActive ? "bg-emerald-600" : "bg-slate-700"
                 }`}
