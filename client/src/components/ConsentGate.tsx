@@ -12,57 +12,72 @@ export function ConsentGate({ onAccept, selectedAvatarId, onSelectAvatar, avatar
   const canStart = checked && Boolean(selectedAvatarId);
 
   return (
-    <div className="fixed inset-0 z-50 bg-[radial-gradient(circle_at_top,#10203f_0%,#040916_45%,#02050f_100%)]">
-      <div className="h-full w-full p-6 sm:p-8 flex items-center justify-center">
-        <div className="glass w-full max-w-5xl rounded-3xl border border-slate-700/60 p-6 sm:p-8 flex flex-col gap-7">
-          <div className="text-center">
-            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Crisis Coach</h1>
-            <p className="mt-2 text-sm sm:text-base text-slate-300">
-              Choose the coach you want to speak with.
-            </p>
+    <div className="fixed inset-0 z-50 bg-[#ecf3f5] text-slate-900 overflow-y-auto">
+      <div className="mx-auto max-w-6xl px-6 py-6 sm:px-8">
+        <div className="flex items-center justify-between text-sm text-slate-600">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-teal-600 text-white flex items-center justify-center text-base">♡</div>
+            <div className="font-medium text-slate-800">Crisis Coach</div>
           </div>
+          <div className="hidden sm:block">End-to-end encrypted • Anonymous</div>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="mt-12 sm:mt-16 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs text-slate-600 shadow-sm border border-slate-200">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Therapists online now
+          </div>
+          <h1 className="mt-5 text-4xl sm:text-6xl font-semibold tracking-tight leading-tight text-slate-900">
+            A calm voice, <span className="text-teal-600">whenever you need one.</span>
+          </h1>
+          <p className="mt-4 text-slate-600 max-w-2xl mx-auto">
+            Choose a therapist below and start a private voice and video session in under a minute.
+          </p>
+        </div>
+
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto">
           {avatarOptions.map((option) => (
             <button
               key={option.id}
               type="button"
               onClick={() => onSelectAvatar(option.id)}
-              className={`rounded-lg border p-2 text-left ${
+              className={`rounded-3xl border p-4 bg-white text-left shadow-sm transition ${
                 selectedAvatarId === option.id
-                  ? "border-blue-500 bg-blue-900/30 ring-2 ring-blue-500/40"
-                  : "border-slate-700 bg-slate-900/50 hover:border-slate-500"
+                  ? "border-teal-500 ring-2 ring-teal-200"
+                  : "border-slate-200 hover:border-slate-300"
               }`}
             >
-              <img src={option.imageSrc} alt={option.name} className="w-full h-52 object-cover rounded-xl" />
-              <div className="mt-3 text-base font-medium">{option.name}</div>
+              <img src={option.imageSrc} alt={option.name} className="w-full h-48 object-cover rounded-2xl" />
+              <div className="mt-4">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Therapist</div>
+                <div className="mt-1 text-2xl font-semibold text-slate-900">{option.name}</div>
+              </div>
             </button>
           ))}
-          </div>
+        </div>
 
-          <div className="rounded-2xl border border-slate-700/70 bg-slate-950/40 p-4 sm:p-5">
-            <p className="text-sm text-slate-300 leading-relaxed">
-              Camera is used locally for affect detection. Audio is processed by Bodhi for live crisis support. Video
-              frames are not persisted. Emergency actions may notify trusted contacts when high-risk intent is detected.
-            </p>
-            <label className="mt-4 flex gap-2 text-sm items-start">
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={(event) => setChecked(event.target.checked)}
-                className="mt-0.5"
-              />
-              I understand and consent to begin this session.
-            </label>
-            <button
-              type="button"
-              disabled={!canStart}
-              onClick={onAccept}
-              className="mt-5 rounded-lg px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-45"
-            >
-              Enter Crisis Coach
-            </button>
-          </div>
+        <div className="mt-10 max-w-3xl mx-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-600 leading-relaxed">
+            Camera is used locally for affect detection. Audio is processed by Bodhi for live crisis support. Video
+            frames are not persisted. Emergency actions may notify trusted contacts when high-risk intent is detected.
+          </p>
+          <label className="mt-4 flex gap-2 text-sm items-start text-slate-700">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(event) => setChecked(event.target.checked)}
+              className="mt-0.5"
+            />
+            I understand and consent to begin this session.
+          </label>
+          <button
+            type="button"
+            disabled={!canStart}
+            onClick={onAccept}
+            className="mt-5 rounded-xl px-5 py-2.5 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40"
+          >
+            Start session
+          </button>
         </div>
       </div>
     </div>
