@@ -247,7 +247,6 @@ export function useBodhiAgent({ enabled, onFinalTranscript, onTtsPcmChunk, onTts
         setTranscript(text);
         if (final) {
           onFinalTranscriptRef.current(text);
-          onTtsUtteranceEndRef.current?.();
         }
         return;
       }

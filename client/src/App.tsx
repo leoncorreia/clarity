@@ -154,7 +154,7 @@ function App() {
   }, [bodhi, dominantEmotion, hrBpm, inputMode, pushToTalkActive, sessionStartedAt]);
 
   useEffect(() => {
-    bodhi.setMicEnabled(inputMode === "mic" && pushToTalkActive && !bodhi.isSpeaking);
+    bodhi.setMicEnabled(inputMode === "mic" && pushToTalkActive);
   }, [bodhi, inputMode, pushToTalkActive]);
 
   useEffect(() => {
@@ -278,11 +278,13 @@ function App() {
             <div className="mt-3">
               <button
                 type="button"
-                onMouseDown={() => setPushToTalkActive(true)}
-                onMouseUp={() => setPushToTalkActive(false)}
-                onMouseLeave={() => setPushToTalkActive(false)}
-                onTouchStart={() => setPushToTalkActive(true)}
-                onTouchEnd={() => setPushToTalkActive(false)}
+                onPointerDown={() => {
+                  if (bodhi.isSpeaking) bodhi.interrupt();
+                  setPushToTalkActive(true);
+                }}
+                onPointerUp={() => setPushToTalkActive(false)}
+                onPointerCancel={() => setPushToTalkActive(false)}
+                onPointerLeave={() => setPushToTalkActive(false)}
                 className={`rounded px-3 py-2 text-xs ${
                   pushToTalkActive ? "bg-emerald-600" : "bg-slate-700"
                 }`}
