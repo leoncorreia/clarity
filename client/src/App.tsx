@@ -140,6 +140,7 @@ function App() {
 
   useEffect(() => {
     if (!sessionStartedAt) return;
+    if (inputMode !== "mic" || !pushToTalkActive) return;
     const timerId = window.setInterval(() => {
       const duration = Math.floor((Date.now() - sessionStartedAt) / 1000);
       bodhi.sendContextUpdate({
@@ -150,11 +151,17 @@ function App() {
     }, 5000);
 
     return () => window.clearInterval(timerId);
-  }, [bodhi, dominantEmotion, hrBpm, sessionStartedAt]);
+  }, [bodhi, dominantEmotion, hrBpm, inputMode, pushToTalkActive, sessionStartedAt]);
 
   useEffect(() => {
     bodhi.setMicEnabled(inputMode === "mic" && pushToTalkActive && !bodhi.isSpeaking);
   }, [bodhi, inputMode, pushToTalkActive]);
+
+  useEffect(() => {
+    if (typedInput.trim().length > 0 && bodhi.isSpeaking) {
+      bodhi.interrupt();
+    }
+  }, [bodhi, typedInput]);
 
   useEffect(() => {
     if (inputMode === "text" && pushToTalkActive) {
